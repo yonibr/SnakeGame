@@ -17,28 +17,29 @@ speed = None
 input_hook = None
 
 ############ Reinforcement Learning Training Variables ##############
-rl_training_iters = 25000000
-episodes_to_change_level_over = rl_training_iters // 5000
+model_snapshot_freq = 5
+rl_training_iters = 120000000
+episodes_to_change_level_over = rl_training_iters // 2500
 episode_counter = 0
 episode_counter_lock = Lock()
 
 # Level probability interpolations
 points = (
     0,
-    rl_training_iters // 5,
-    2 * rl_training_iters // 5,
-    3 * rl_training_iters // 5,
-    4 * rl_training_iters // 5
+    episodes_to_change_level_over // 5,
+    2 * episodes_to_change_level_over // 5,
+    3 * episodes_to_change_level_over // 5,
+    4 * episodes_to_change_level_over // 5
 )
 basic_vals = 1, 0.8, 0.15, 0.1, 0.05
 viewfinder_vals = 0, 0.2, 0.8, 0.4, 0.15
 random_vals = 0, 0, 0.05, 0.5, 0.8
 
-level_probabilities = list(zip(
-    np.interp(np.arange(0, rl_training_iters), basic_vals, points),
-    np.interp(np.arange(0, rl_training_iters), viewfinder_vals, points),
-    np.interp(np.arange(0, rl_training_iters), random_vals, points)
-))
+level_probabilities = np.array(list(zip(
+    np.interp(np.arange(0, episodes_to_change_level_over), points, basic_vals),
+    np.interp(np.arange(0, episodes_to_change_level_over), points, viewfinder_vals),
+    np.interp(np.arange(0, episodes_to_change_level_over), points, random_vals)
+)))
 
 
 def get_probabilities():
