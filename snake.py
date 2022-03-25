@@ -513,15 +513,21 @@ class Game(object):
     def place_snake(self, start_x: int, start_y: int, start_length: int) -> None:
         get_all_pos = lambda x, y: [(new_x, y) for new_x in range(x - start_length - 1, x + 3)]
 
-        counter = 0
+        possible_positions = [
+            (x, y) for x, y in itertools.product(range(self.board_width), range(self.board_height))
+            if not self.level.in_wall((x, y))
+        ]
+        np.random.shuffle(possible_positions)
+
+        failed = False
         pos = start_x, start_y
         while any(self.level.in_wall((x, y)) for x, y in get_all_pos(*pos)):
-            pos = rand_pos(self.board_width, self.board_height, buffer=2)
-            counter += 1
-            if counter > 100000:
+            if len(possible_positions) == 0:
+                failed = True
                 break
+            pos = possible_positions.pop()
 
-        if counter <= 100000:
+        if not failed:
             self.snake = Snake(*pos, start_length)
 
     def place_food(self) -> None:
