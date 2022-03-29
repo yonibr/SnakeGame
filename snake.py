@@ -284,7 +284,7 @@ class Level(object):
             elif cell_accessibility[y][x] == 2:
                 to_check.append((x, y))
 
-        if not fully_accessible:
+        if fully_accessible:
             for x, y in to_check:
                 modified_mask = [list(row) for row in mask]
                 modified_mask[y][x] = True
