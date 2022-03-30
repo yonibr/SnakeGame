@@ -275,17 +275,26 @@ class Level(object):
 
         cell_accessibility = get_cell_accessibility(mask)
 
-        to_check = []
+        to_check2 = []
+        to_check3 = []
+        to_check4 = []
         fully_accessible = True
         for x, y in itertools.product(range(width), range(height)):
             if cell_accessibility[y][x] == 1:
                 fully_accessible = False
                 break
             elif cell_accessibility[y][x] == 2:
-                to_check.append((x, y))
+                to_check2.append((x, y))
+            elif cell_accessibility[y][x] == 3:
+                to_check3.append((x, y))
+            elif cell_accessibility[y][x] == 4:
+                to_check4.append((x, y))
 
+        # First we want to check cells with accessibility of 2, then 3, then 4. This
+        # order is because it is more likely that a blockage will occurr when the
+        # accessibility is 2 vs 3 and 3 vs 4, and we want to check as few cells as possible.
         if fully_accessible:
-            for x, y in to_check:
+            for x, y in itertools.chain(to_check2, to_check3, to_check4):
                 modified_mask = [list(row) for row in mask]
                 modified_mask[y][x] = True
                 modified_mask = self.compute_mask(cells=modified_mask)
