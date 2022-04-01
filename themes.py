@@ -91,5 +91,14 @@ themes = {
         Color(217, 175, 107),   # text
         Color( 98,  83, 119),   # grid
         Color(115, 111,  76)    # food
+    ),
+    'rainbow': Theme(
+        Color(  0, 255,   0),   # snake
+        Color(255, 255,   0),   # eyes
+        Color( 75,   0, 130),   # background
+        Color(  0,   0, 255),   # walls
+        Color(255,   0,   0),   # text
+        Color(148,   0, 211),   # grid
+        Color(255, 127,   0)    # food
     )
 }
