@@ -185,18 +185,7 @@ def main():
 
 def rl_main():
     from renderers import renderers
-    from reinforcement_learning import (
-        create_acer_model,
-        create_cnn_lstm_ppo2_model,
-        create_cnn_lstm_ppo2_model2,
-        create_cnn_lstm_ppo2_model3,
-        create_dqn_model,
-        create_ppo2_model,
-        create_recurrent_ppo2_model
-    )
-
-    # from computer_player import RandomPlayer
-    # state.input_hook = RandomPlayer()
+    from reinforcement_learning import create_cnn_lstm_ppo2_model
 
     game_params, renderer_params, other_params = parse_args()
 
@@ -213,35 +202,11 @@ def rl_main():
 
     tick_time = other_params['tick_time']
 
-    # filename = f'{state.board_width}x{state.board_height}_acer.model'
-    # model, env = create_acer_model(filename, game_params)
 
-    # filename = f'{state.board_width}x{state.board_height}_dqn.model'
-    # model, env = create_dqn_model(filename, game_params)
-    
-    # filename = f'{state.board_width}x{state.board_height}_ppo2.model'
-    # model, env = create_ppo2_model(filename, game_params, iters=1000000)
-
-    # state.game = env.game
-
-    # state.interval = set_interval(.1, .25, rl_loop, None, env, model)
-
-    # filename = f'{state.board_width}x{state.board_height}_ppo2_recurrent.model'
-    # model, env = create_recurrent_ppo2_model(filename, game_params, iters=1000000)
-
-    # filename = f'{state.board_width}x{state.board_height}_ppo2_cnn_lstm.model'
-    # model, env = create_cnn_lstm_ppo2_model(
-    #     filename, game_params, iters=1000000, gamma_start=0.978, gamma_stop=.993, taper_gamma_steps=25
-    # )
-
-    # filename = f'{state.board_width}x{state.board_height}_ppo2_cnn_lstm2.model'
-    # model, env = create_cnn_lstm_ppo2_model2(
-    #     filename, game_params, iters=7500000, gamma_start=0.9875, gamma_stop=.9925, taper_gamma_steps=50
-    # )
-
-    filename = f'{state.board_width}x{state.board_height}_ppo2_cnn_lstm3.model'
-    model, env = create_cnn_lstm_ppo2_model3(
-        filename, game_params, iters=state.rl_training_iters, gamma_start=0.99, gamma_stop=.995, taper_gamma_steps=50
+    filename = f'{state.board_width}x{state.board_height}_ppo2_cnn_lstm.model'
+    model, env = create_cnn_lstm_ppo2_model(
+        filename, game_params, iters=state.rl_training_iters, gamma_start=0.989,
+        gamma_stop=.991, taper_steps=100
     )
 
     global run_control_thread

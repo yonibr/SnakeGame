@@ -32,376 +32,10 @@ rng = np.random.default_rng()
 
 
 class SnakeEnv(gym.Env):
-    def __init__(self, game_params):
-        self.game_params = game_params
-        self.game = Game(*game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-        self.observation_shape = self.game.board_width, self.game.board_height, 4
-        
-        self.action_space = gym.spaces.Discrete(5)
-        self.observation_space = gym.spaces.Box(
-            low=np.zeros(self.observation_shape),
-            high=np.ones(self.observation_shape),
-            dtype=np.int16
-        )
-
-        self.do_nothing_threshold = max(self.game.board_width, self.game.board_height) * 5
-
-        self.end_length = -1
-        self.did_end = False
-
-    def get_observation(self) -> np.ndarray:
-        # 0 - wall
-        # 1 - snake body/tail
-        # 2 - food
-        # 3 - snake head
-        observation = np.zeros(self.observation_shape)
-
-        observation[self.game.food.y, self.game.food.x, 2] = 1
-
-        for node in self.game.snake:
-            if node is not self.game.snake.head:
-                observation[node.y, node.x, 1] = 1
-            else:
-                observation[node.y, node.x, 3] = 1
-        for node in self.game.level.wall_nodes: # TODO figure out if I want to also set enclosed spaces to 1
-            observation[node.y, node.x, 0] = 1
-
-        return observation
-
-    def get_action_meanings(self):
-        return {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'No Change'}
-
-    def reset(self) -> np.ndarray:
-        self.end_length = len(self.game.snake)
-        self.did_end = True
-        self.game = Game(*self.game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-
-        return self.get_observation()
-
-    def step(self, action):
-        direction = action_map.get(action)
-
-        if direction:
-            self.game.snake.direction = direction
-
-        self.game.tick()
-        self.steps_since_food += 1
-        if self.game.won:
-            reward = 5000
-        elif self.game.game_over:
-            reward = min(-10 / (self.foods_eaten + 1), -1)
-        elif self.game.food.pos != self.food_pos:
-            reward = 0 if self.food_pos is None else 10
-            self.foods_eaten += 1 if self.food_pos is not None else 0
-            self.food_pos = self.game.food.pos
-            self.steps_since_food = 0
-        elif self.foods_eaten < 1:
-            reward = 0.01 / self.steps_since_food**2.1
-        elif self.foods_eaten < 3:
-            reward = 0.0001 / self.steps_since_food**2.1
-        elif self.foods_eaten < 5:
-            reward = 0
-        else:
-            reward = -.0000004
-
-        doing_nothing_penalty = self.steps_since_food / (self.foods_eaten + 1)
-        if doing_nothing_penalty > self.do_nothing_threshold:
-            reward -= 0.0005 * doing_nothing_penalty
-
-        return self.get_observation(), reward, self.game.game_over, {}
-
-
-class SnakeEnv2(gym.Env):
-    def __init__(self, game_params):
-        self.game_params = game_params
-        self.game = Game(*game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-        self.observation_shape = self.game.board_width, self.game.board_height, 4
-        
-        self.action_space = gym.spaces.Discrete(4)
-
-        high = np.ones(self.observation_shape)
-        high[:, :, 1] = len(self.game) - len(self.game.level)
-
-        self.observation_space = gym.spaces.Box(
-            low=np.zeros(self.observation_shape),
-            high=high,
-            dtype=np.int16
-        )
-        self.do_nothing_threshold = max(self.game.board_width, self.game.board_height) * 5
-
-        self.end_length = -1
-        self.did_end = False
-
-    def get_observation(self) -> np.ndarray:
-        # 0 - wall
-        # 1 - snake body/tail
-        # 2 - food
-        # 3 - snake head
-        observation = np.zeros(self.observation_shape)
-
-        observation[self.game.food.y, self.game.food.x, 2] = 1
-
-        # TODO for snake tail feature, might want a number to indicate how many more turns a specific grid location will be filled for
-        for node, fill_remaining in zip(self.game.snake, range(len(self.game.snake), 0, -1)):
-            if node is not self.game.snake.head:
-                observation[node.y, node.x, 1] = fill_remaining
-            else:
-                observation[node.y, node.x, 3] = 1
-        for node in self.game.level.wall_nodes: # TODO figure out if I want to also set enclosed spaces to 1
-            observation[node.y, node.x, 0] = 1
-
-
-        return observation
-
-    def get_action_meanings(self):
-        return {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'No Change'}
-
-    def reset(self) -> np.ndarray:
-        self.end_length = len(self.game.snake)
-        self.did_end = True
-        self.game = Game(*self.game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-
-        return self.get_observation()
-
-    def step(self, action):
-        direction = action_map.get(action)
-
-        if direction:
-            self.game.snake.direction = direction
-
-        self.game.tick()
-        self.steps_since_food += 1
-        if self.game.won:
-            reward = 5000
-        elif self.game.game_over:
-            reward = min(-12 / (self.foods_eaten + 1)**0.5, -1.25)
-        elif self.game.food.pos != self.food_pos:
-            self.foods_eaten += 1 if self.food_pos is not None else 0
-            reward = 10 * self.foods_eaten**.5
-            self.food_pos = self.game.food.pos
-            self.steps_since_food = 0
-        elif self.foods_eaten < 1:
-            reward = 0.01 / self.steps_since_food**2.1
-        elif self.foods_eaten < 3:
-            reward = 0.0001 / self.steps_since_food**2.1
-        elif self.foods_eaten < 5:
-            reward = 0
-        else:
-            reward = -.0000003
-
-        doing_nothing_penalty = self.steps_since_food / (self.foods_eaten + 1)**.75
-        if doing_nothing_penalty > self.do_nothing_threshold:
-            reward -= 0.0005 * doing_nothing_penalty
-
-        return self.get_observation(), reward, self.game.game_over, {}
-
-
-class SnakeEnv3(gym.Env):
-    def __init__(self, game_params, cnn_policy=False):
-        self.game_params = game_params
-        self.game = Game(*game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-        self.observation_shape = self.game.board_width, self.game.board_height, 4
-        
-        self.action_space = gym.spaces.Discrete(4)
-
-        high = np.ones(self.observation_shape)
-        if cnn_policy:
-            high *= 255
-
-        self.observation_space = gym.spaces.Box(
-            low=np.zeros(self.observation_shape),
-            high=high,
-            dtype=np.int16
-        )
-        self.max_dim = max(self.game.board_width, self.game.board_height)
-        self.do_nothing_threshold = self.max_dim * 5
-        self.end_length = -1
-        self.did_end = False
-        self.on_value = 255 if cnn_policy else 1
-
-    def get_observation(self) -> np.ndarray:
-        # 0 - wall
-        # 1 - snake body/tail
-        # 2 - food
-        # 3 - snake head
-        observation = np.zeros(self.observation_shape)
-
-        observation[self.game.food.y, self.game.food.x, 2] = self.on_value
-
-        for node in self.game.snake:
-            if node is not self.game.snake.head:
-                observation[node.y, node.x, 1] = self.on_value
-            else:
-                observation[node.y, node.x, 3] = self.on_value
-        for node in self.game.level.wall_nodes: # TODO figure out if I want to also set enclosed spaces to 1
-            observation[node.y, node.x, 0] = self.on_value
-
-        return observation
-
-    @staticmethod
-    def get_action_meanings():
-        return {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'No Change'}
-
-    def reset(self) -> np.ndarray:
-        self.end_length = len(self.game.snake)
-        self.did_end = True
-        self.game = Game(*self.game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-
-        return self.get_observation()
-
-    def step(self, action):
-        direction = action_map.get(action)
-
-        if direction:
-            self.game.snake.direction = direction
-
-        self.game.tick()
-        self.steps_since_food += 1
-        if self.game.won:
-            reward = 10000
-        elif self.game.game_over:
-            # reward = min(-13 / (self.foods_eaten + 1)**0.5, -1.5)
-            reward = -10 - self.foods_eaten**0.49
-        elif self.game.food.pos != self.food_pos:
-            self.foods_eaten += 1 if self.food_pos is not None else 0
-            reward = 12 * self.foods_eaten**0.555
-            self.food_pos = self.game.food.pos
-            self.steps_since_food = 0
-        elif self.foods_eaten < 1:
-            reward = 0.01 / self.steps_since_food**2.1
-        elif self.foods_eaten < 3:
-            reward = 0.0001 / self.steps_since_food**2.1
-        elif self.foods_eaten < 10:
-            reward = 0.000025 / self.steps_since_food**2.1
-        elif self.foods_eaten < 15 or self.steps_since_food < self.max_dim:
-            reward = 0
-        else:
-            reward = -.0000002
-
-        doing_nothing_penalty = self.steps_since_food / (self.foods_eaten + 1)**.75
-        if doing_nothing_penalty > self.do_nothing_threshold:
-            reward -= 0.0005 * doing_nothing_penalty
-
-        return self.get_observation(), reward, self.game.game_over, {}
-
-
-class SnakeEnv4(gym.Env):
-    def __init__(self, game_params, cnn_policy=False):
-        self.game_params = game_params
-        self.game = Game(*game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-        self.observation_shape = self.game.board_width, self.game.board_height, 3
-        
-        self.action_space = gym.spaces.Discrete(4)
-
-        high = np.ones(self.observation_shape)
-        if cnn_policy:
-            high *= 255
-
-        self.observation_space = gym.spaces.Box(
-            low=np.zeros(self.observation_shape),
-            high=high,
-            dtype=np.int16
-        )
-        self.max_dim = max(self.game.board_width, self.game.board_height)
-        self.do_nothing_threshold = self.max_dim * 5
-        self.end_length = -1
-        self.did_end = False
-        self.on_value = 255 if cnn_policy else 1
-
-    def get_observation(self) -> np.ndarray:
-        # 0 - wall
-        # 1 - snake body/tail
-        # 2 - food
-        # 3 - snake head
-        observation = np.zeros(self.observation_shape)
-
-        observation[self.game.food.y, self.game.food.x, 1] = self.on_value
-
-        for node in self.game.snake:
-            if node is not self.game.snake.head:
-                observation[node.y, node.x, 0] = self.on_value
-            else:
-                observation[node.y, node.x, 2] = self.on_value
-        for node in self.game.level.wall_nodes: # TODO figure out if I want to also set enclosed spaces to 1
-            observation[node.y, node.x, 0] = self.on_value
-
-
-        return observation
-
-    def get_action_meanings(self):
-        return {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'No Change'}
-
-    def reset(self) -> np.ndarray:
-        self.end_length = len(self.game.snake)
-        self.did_end = True
-        self.game = Game(*self.game_params)
-        self.food_pos = None
-        self.foods_eaten = 0
-        self.steps_since_food = 0
-
-        return self.get_observation()
-
-    def step(self, action):
-        direction = action_map.get(action)
-
-        if direction:
-            self.game.snake.direction = direction
-
-        self.game.tick()
-        self.steps_since_food += 1
-        if self.game.won:
-            reward = 10000
-        elif self.game.game_over:
-            # reward = min(-13 / (self.foods_eaten + 1)**0.5, -1.5)
-            reward = -10 - self.foods_eaten**0.475
-        elif self.game.food.pos != self.food_pos:
-            self.foods_eaten += 1 if self.food_pos is not None else 0
-            reward = 10 * self.foods_eaten**0.55
-            self.food_pos = self.game.food.pos
-            self.steps_since_food = 0
-        elif self.foods_eaten < 1:
-            reward = 0.01 / self.steps_since_food**2.1
-        elif self.foods_eaten < 3:
-            reward = 0.0001 / self.steps_since_food**2.1
-        elif self.foods_eaten < 10:
-            reward = 0.000025 / self.steps_since_food**2.1
-        elif self.foods_eaten < 15 or self.steps_since_food < self.max_dim:
-            reward = 0
-        else:
-            reward = -.000000075
-
-        doing_nothing_penalty = self.steps_since_food / (self.foods_eaten + 1)**.75
-        if doing_nothing_penalty > self.do_nothing_threshold:
-            reward -= 0.0005 * doing_nothing_penalty
-
-        return self.get_observation(), reward, self.game.game_over, {}
-
-
-class SnakeEnv5(gym.Env):
     def __init__(self, game_params, cnn_policy=False, randomize_start_length=True):
         self.randomize_start_length = randomize_start_length
         self.game_params = game_params
+        self.max_start_length = min(game_params[3], game_params[4]) // 2
         self.update_start_length()
         self.game = Game(*game_params)
         self.food_pos = None
@@ -497,7 +131,7 @@ class SnakeEnv5(gym.Env):
 
     def update_start_length(self):
         if self.randomize_start_length:
-            self.game_params[2] = rng.integers(1, 13)
+            self.game_params[2] = rng.integers(1, self.max_start_length)
 
     def update_vol_and_food_mult(self):
         board_interior_size = (self.game.board_width - 2) * (self.game.board_height - 2)
@@ -505,6 +139,7 @@ class SnakeEnv5(gym.Env):
         inner_wall_size = len(self.game.level) - outer_wall_size
         self.volume = board_interior_size - inner_wall_size
         self.food_multiplier = board_interior_size / self.volume
+
 
 def modified_cnn(scaled_images, **kwargs):
     activ = tf.nn.relu
@@ -526,9 +161,18 @@ def modified_cnn2(scaled_images, **kwargs):
 
 def modified_cnn3(scaled_images, **kwargs):
     activ = tf.nn.swish
-    layer_1 = activ(conv(scaled_images, 'c1', n_filters=32, filter_size=5, stride=3, init_scale=np.sqrt(2), **kwargs))
-    layer_2 = activ(conv(layer_1, 'c2', n_filters=64, filter_size=4, stride=2, init_scale=np.sqrt(2), **kwargs))
-    layer_3 = activ(conv(layer_2, 'c3', n_filters=64, filter_size=3, stride=1, init_scale=np.sqrt(2), **kwargs))
+    layer_1 = activ(conv(
+        scaled_images, 'c1', n_filters=32, filter_size=5, stride=3, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
+    layer_2 = activ(conv(
+        layer_1, 'c2', n_filters=64, filter_size=4, stride=2, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
+    layer_3 = activ(conv(
+        layer_2, 'c3', n_filters=64, filter_size=3, stride=1, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
     layer_3 = conv_to_fc(layer_3)
     return activ(linear(layer_3, 'fc1', n_hidden=512, init_scale=np.sqrt(2)))
 
@@ -566,84 +210,16 @@ class TensorboardCallback(BaseCallback):
         for env in self.training_env.envs:
             env = env.env
             if env.did_end:
-                value = env.end_length
-                summary = tf.Summary(value=[tf.Summary.Value(tag='snake_length', simple_value=value)])
+                summary = tf.Summary(value=[
+                    tf.Summary.Value(tag='snake_length', simple_value=env.end_length),
+                    tf.Summary.Value(tag='frac_volume_occupied', simple_value=env.volume_filled)
+                ])
                 self.locals['writer'].add_summary(summary, self.num_timesteps)
                 env.did_end = False
-                env.end_length = -1
+                env.end_length = env.volume_filled = -1
 
         return True
 
-
-def create_dqn_model(save_location: str, game_params: Sequence[Any], iters: int=350000, verbose: int=1) -> Tuple[DQN, gym.Env]:
-    from stable_baselines.deepq.policies import MlpPolicy
-
-    env = SnakeEnv2(game_params)
-
-    try:
-        model = DQN.load(save_location, env=env)
-        print('Loaded existing model from:', save_location)
-    except ValueError as e:
-        print('Creating new model...')
-        model = DQN(MlpPolicy, env, verbose=verbose, buffer_size=100000, exploration_fraction=0.2, exploration_final_eps=0.03)
-
-    model.learn(total_timesteps=iters)
-    env.reset()
-    model.save(save_location)
-    print('Saved model to:', save_location)
-
-    return model, env
-
-
-def create_ppo2_model(
-        save_location: str, game_params: Sequence[Any], iters: int=3500000,
-        verbose: int=1) -> Tuple[PPO2, gym.Env]:
-    from stable_baselines.common.policies import MlpPolicy
-
-    env = make_vec_env(SnakeEnv2, n_envs=8, env_kwargs={'game_params': game_params})
-
-    try:
-        model = PPO2.load(save_location, env=env, n_steps=2500, cliprange=0.2)
-        print('Loaded existing model from:', save_location)
-    except ValueError as e:
-        print('Creating new model...')
-        model = PPO2(MlpPolicy, env, verbose=verbose, noptepochs=8, cliprange=0.22)
-
-    if iters > 0:
-        model.learn(total_timesteps=iters)
-        model.save(save_location)
-        print('Saved model to:', save_location)
-
-    return model, SnakeEnv2(game_params)
-
-
-def create_recurrent_ppo2_model(
-        save_location: str, game_params: Sequence[Any], iters: int=3500000,
-        verbose: int=1) -> Tuple[PPO2, gym.Env]:
-    from stable_baselines.common.policies import MlpLnLstmPolicy
-
-    env = make_vec_env(SnakeEnv3, n_envs=8, env_kwargs={'game_params': game_params})
-
-    try:
-        model = PPO2.load(
-            save_location, env=env, n_steps=1250, verbose=verbose, noptepochs=8, gamma=0.995,
-            tensorboard_log='./recur_ppo2_snake/'
-        )
-        print('Loaded existing model from:', save_location)
-    except ValueError as e:
-        print('Creating new model...')
-        model = PPO2(
-            MlpLnLstmPolicy, env, verbose=verbose, noptepochs=8, gamma=0.98, n_steps=500,
-            tensorboard_log='./recur_ppo2_snake/'
-        )
-
-    if iters > 0:
-        model.learn(total_timesteps=iters, callback=TensorboardCallback())
-        model.save(save_location)
-        env.reset()
-        print('Saved model to:', save_location)
-
-    return model, env
 
 #  gamma   half_life
 # 0.96500  19.455574
@@ -665,179 +241,47 @@ def create_recurrent_ppo2_model(
 # 0.99900  692.800549
 # 0.99925  923.849624
 def create_cnn_lstm_ppo2_model(
-            save_location: str, game_params: Sequence[Any], iters: int=3500000,
-            verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_gamma_steps: int=100) -> Tuple[PPO2, gym.Env]:
-    from stable_baselines.common.policies import CnnLnLstmPolicy
-
-    env = make_vec_env(SnakeEnv3, n_envs=8, env_kwargs={'game_params': game_params, 'cnn_policy': True})
-
-
-    if gamma_stop:
-        gammas = np.linspace(gamma_start, gamma_stop, taper_gamma_steps)
-    else:
-        gammas = [gamma_start]
-
-    gamma_step_iters = iters // taper_gamma_steps
-    tb = TensorboardCallback()
-
-    for gamma in gammas:
-        try:
-            if gamma == gamma_start:
-                model = PPO2.load(
-                    save_location, env=env, n_steps=500, verbose=verbose, gamma=gamma, cliprange=0.21,
-                    lam=0.925, tensorboard_log='./recur_ppo2_snake/'
-                )
-                print('Loaded existing model from:', save_location)
-            else:
-                model.gamma = gamma
-                model.n_steps += 5
-        except ValueError as e:
-            print('Creating new model...')
-            model = PPO2(
-                CnnLnLstmPolicy, env, verbose=verbose, gamma=gamma, n_steps=250,
-                tensorboard_log='./recur_ppo2_snake/', policy_kwargs={'cnn_extractor': modified_cnn}
-            )
-
-        if iters > 0:
-            model.learn(total_timesteps=gamma_step_iters, callback=tb, reset_num_timesteps=False)
-            model.save(save_location)
-            env.reset()
-            print('Saved model to:', save_location)
-
-    return model, env
-
-
-def create_cnn_lstm_ppo2_model2(
-            save_location: str, game_params: Sequence[Any], iters: int=3500000,
-            verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_gamma_steps: int=100) -> Tuple[PPO2, gym.Env]:
-    from stable_baselines.common.policies import CnnLnLstmPolicy
-
-    env = make_vec_env(SnakeEnv5, n_envs=64, env_kwargs={'game_params': game_params, 'cnn_policy': True})
-
-    if gamma_stop:
-        gammas = np.linspace(gamma_start, gamma_stop, taper_gamma_steps)
-    else:
-        gammas = [gamma_start]
-    cb = TensorboardCallback()
-
-    gamma_step_iters = iters // taper_gamma_steps
-    for gamma in gammas:
-        try:
-            if gamma == gamma_start:
-                model = PPO2.load(
-                    save_location, env=env, n_steps=1250, verbose=verbose, gamma=gamma,
-                    learning_rate=5e-4, ent_coef=.015, cliprange=0.235,
-                    nminibatches=32, tensorboard_log=r'D:\snake_tb_logs', noptepochs=5
-                )
-                print('Loaded existing model from:', save_location)
-            else:
-                model.gamma = gamma
-        except ValueError as _:
-            print('Creating new model...')
-            model = PPO2(
-                CnnLnLstmPolicy, env, verbose=verbose, gamma=gamma, n_steps=750, learning_rate=7e-4, cliprange=0.25,
-                ent_coef=.015, noptepochs=5, tensorboard_log=r'D:\snake_tb_logs', nminibatches=32,
-                policy_kwargs={'cnn_extractor': modified_cnn2, 'n_lstm': 128}
-            )
-
-        if iters > 0:
-            model.learn(total_timesteps=gamma_step_iters, callback=cb, reset_num_timesteps=False)
-            model.save(save_location)
-            env.reset()
-            print('Saved model to:', save_location)
-
-    return model, env
-
-
-def create_cnn_lstm_ppo2_model3(
             save_location: str, game_params: Sequence[Any], iters: int=7500000,
             verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_gamma_steps: int=100) -> Tuple[PPO2, gym.Env]:
+            taper_steps: int=100, lr_start=6e-4, lr_stop=4e-4) -> Tuple[PPO2, gym.Env]:
     from stable_baselines.common.policies import CnnLnLstmPolicy
     from stable_baselines.common.schedules import LinearSchedule
 
-    env = make_vec_env(SnakeEnv5, n_envs=64, env_kwargs={'game_params': game_params, 'cnn_policy': True})
+    taper_steps = max(taper_steps, 1)
+    env = make_vec_env(SnakeEnv, n_envs=8, env_kwargs={'game_params': game_params, 'cnn_policy': True})
 
     if gamma_stop:
-        gammas = np.linspace(gamma_start, gamma_stop, taper_gamma_steps)
+        gammas = np.linspace(gamma_start, gamma_stop, taper_steps)
     else:
         gammas = [gamma_start]
     cb = TensorboardCallback()
 
-    gamma_step_iters = iters // taper_gamma_steps
-    learning_schedule = LinearSchedule(iters, 2e-4, initial_p=5e-4)
-    for gamma in gammas:
+    step_iters = iters // taper_steps
+    lr_ranges = list(np.linspace(lr_start, lr_stop, taper_steps + 1))
+    for i in range(taper_steps):
+        lr_schedule = LinearSchedule(step_iters, lr_ranges[i + 1], initial_p=lr_ranges[i])
         try:
-            if gamma == gamma_start:
+            if gammas[i] == gamma_start:
                 model = PPO2.load(
-                    save_location, env=env, n_steps=2000, verbose=verbose, gamma=gamma,
-                    learning_rate=learning_schedule.value, ent_coef=.016, cliprange=0.225,
-                    nminibatches=32, tensorboard_log=r'D:\snake_tb_logs', noptepochs=5
+                    save_location, env=env, n_steps=2000, verbose=verbose, gamma=gammas[i],
+                    learning_rate=lr_schedule.value, ent_coef=.025, cliprange=0.23,
+                    nminibatches=4, tensorboard_log='tb_logs', noptepochs=3
                 )
                 print('Loaded existing model from:', save_location)
             else:
-                model.gamma = gamma
+                model.gamma = gammas[i]
         except ValueError as _:
             print('Creating new model...')
             model = PPO2(
-                CnnLnLstmPolicy, env, verbose=verbose, gamma=gamma, n_steps=1250, learning_rate=learning_schedule.value,
-                cliprange=0.25, ent_coef=.015, noptepochs=5, tensorboard_log=r'D:\snake_tb_logs', nminibatches=32,
+                CnnLnLstmPolicy, env, verbose=verbose, gamma=gammas[i], n_steps=1750, learning_rate=lr_schedule.value,
+                cliprange=0.26, ent_coef=.03, noptepochs=3, tensorboard_log='tb_logs', nminibatches=4,
                 policy_kwargs={'cnn_extractor': modified_cnn3, 'n_lstm': 256}
             )
 
         if iters > 0:
-            model.learn(total_timesteps=gamma_step_iters, callback=cb, reset_num_timesteps=False)
+            model.learn(total_timesteps=step_iters, callback=cb, reset_num_timesteps=False)
             model.save(save_location)
             env.reset()
             print('Saved model to:', save_location)
 
     return model, env
-
-# def create_cnn_lstm_ppo2_model(save_location: str, game_params: Sequence[Any], iters: int=3500000, verbose: int=1) -> Tuple[PPO2, gym.Env]:
-#     from stable_baselines.common.policies import CnnLnLstmPolicy
-
-#     env = make_vec_env(SnakeEnv3, n_envs=8, env_kwargs={'game_params': game_params, 'cnn_policy': True})
-
-#     try:
-#         model = PPO2.load(
-#             save_location, env=env, n_steps=510, verbose=verbose, gamma=0.9785, cliprange=.208,
-#             tensorboard_log='./recur_ppo2_snake/'
-#         )
-#         print('Loaded existing model from:', save_location)
-#     except Exception as e:
-#         print('Creating new model...')
-#         model = PPO2(
-#             CnnLnLstmPolicy, env, verbose=verbose, gamma=0.98, n_steps=500,
-#             tensorboard_log='./recur_ppo2_snake/', policy_kwargs={'cnn_extractor': modified_cnn}
-#         )
-
-#     if iters > 0:
-#         model.learn(total_timesteps=iters, callback=TensorboardCallback())
-#         model.save(save_location)
-#         env.reset()
-#         print('Saved model to:', save_location)
-
-#     return model, env
-
-
-def create_acer_model(save_location: str, game_params: Sequence[Any], iters=2000000, verbose: int=1) -> Tuple[ACER, gym.Env]:
-    from stable_baselines.common.policies import CnnPolicy, MlpPolicy
-
-    env = make_vec_env(SnakeEnv2, n_envs=8, env_kwargs={'game_params': game_params})
-
-    try:
-        model = ACER.load(save_location)
-        print('Loaded existing model from:', save_location)
-    except ValueError as e:
-        print('Creating new model...')
-        model = ACER(MlpPolicy, env, verbose=verbose, n_steps=1000, buffer_size=50000)
-
-    if iters > 0:
-        model.learn(total_timesteps=iters)
-        model.save(save_location)
-        print('Saved model to:', save_location)
-
-    return model, SnakeEnv2(game_params)
-
