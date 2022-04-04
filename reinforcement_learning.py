@@ -5,6 +5,7 @@ import tensorflow as tf
 from stable_baselines import ACER, DQN, PPO2
 from stable_baselines.common import make_vec_env
 from stable_baselines.common.callbacks import BaseCallback
+from stable_baselines.common.schedules import Schedule
 from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
 from typing import Any, Optional, Sequence, Tuple
 
@@ -194,6 +195,28 @@ def modified_cnn3(scaled_images, **kwargs):
 #         super(CnnLnLstmPolicy, self).__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch, n_lstm, reuse,
 #                                               layer_norm=True, feature_extraction="cnn", cnn_extractor=modified_cnn, **_kwargs)
 
+
+# Note: This is a fixed version of the stable-baselines LinearSchedule.
+# PPO2 expects value to take the elapsed fraction, not timesteps.
+class LinearSchedule(Schedule):
+    """
+    Linear interpolation between initial_p and final_p over
+    schedule_timesteps. After this many timesteps pass final_p is
+    returned.
+    :param schedule_timesteps: (int) Number of timesteps for which to linearly anneal initial_p to final_p
+    :param initial_p: (float) initial output value
+    :param final_p: (float) final output value
+    """
+
+    def __init__(self, schedule_timesteps, final_p, initial_p=1.0):
+        self.schedule_timesteps = schedule_timesteps
+        self.final_p = final_p
+        self.initial_p = initial_p
+
+    def value(self, fraction):
+        return self.initial_p + (1 - fraction) * (self.final_p - self.initial_p)
+
+
 class TensorboardCallback(BaseCallback):
     def __init__(self, verbose=1):
         self.is_tb_set = False
@@ -243,9 +266,9 @@ class TensorboardCallback(BaseCallback):
 def create_cnn_lstm_ppo2_model(
             save_location: str, game_params: Sequence[Any], iters: int=7500000,
             verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_steps: int=100, lr_start=6e-4, lr_stop=4e-4) -> Tuple[PPO2, gym.Env]:
+            taper_steps: int=100, lr_start: int=4.5e-4, lr_stop: int=2.5e-4
+            ) -> Tuple[PPO2, gym.Env]:
     from stable_baselines.common.policies import CnnLnLstmPolicy
-    from stable_baselines.common.schedules import LinearSchedule
 
     taper_steps = max(taper_steps, 1)
     env = make_vec_env(SnakeEnv, n_envs=8, env_kwargs={'game_params': game_params, 'cnn_policy': True})
@@ -258,13 +281,15 @@ def create_cnn_lstm_ppo2_model(
 
     step_iters = iters // taper_steps
     lr_ranges = list(np.linspace(lr_start, lr_stop, taper_steps + 1))
+    lr_schedule = LinearSchedule(step_iters, lr_ranges[1], initial_p=lr_ranges[0])
     for i in range(taper_steps):
-        lr_schedule = LinearSchedule(step_iters, lr_ranges[i + 1], initial_p=lr_ranges[i])
+        lr_schedule.initial_p = lr_ranges[i]
+        lr_schedule.final_p = lr_ranges[i + 1]
         try:
             if gammas[i] == gamma_start:
                 model = PPO2.load(
-                    save_location, env=env, n_steps=2000, verbose=verbose, gamma=gammas[i],
-                    learning_rate=lr_schedule.value, ent_coef=.025, cliprange=0.23,
+                    save_location, env=env, n_steps=3000, verbose=verbose, gamma=gammas[i],
+                    learning_rate=lr_schedule.value, ent_coef=.025, cliprange=0.225,
                     nminibatches=4, tensorboard_log='tb_logs', noptepochs=3
                 )
                 print('Loaded existing model from:', save_location)
