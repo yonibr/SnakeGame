@@ -1,2 +1,8 @@
 events.out.tfevents
 __pycache__
+/.idea/
+/scores.parquet
+/Scripts/
+/Model Backups/
+/Include/site/python3.6/pygame/
+/Lib/
