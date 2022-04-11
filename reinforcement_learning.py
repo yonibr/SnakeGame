@@ -9,6 +9,8 @@ from stable_baselines.common.schedules import Schedule
 from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
 from typing import Any, Optional, Sequence, Tuple
 
+import state
+
 from snake import Direction, Game
 
 # Note: for moving walls, we'll want to have the observation space be normal 
@@ -177,6 +179,24 @@ def modified_cnn3(scaled_images, **kwargs):
     layer_3 = conv_to_fc(layer_3)
     return activ(linear(layer_3, 'fc1', n_hidden=512, init_scale=np.sqrt(2)))
 
+
+def modified_cnn4(scaled_images, **kwargs):
+    activ = tf.nn.swish
+    layer_1 = activ(conv(
+        scaled_images, 'c1', n_filters=32, filter_size=8, stride=4, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
+    layer_2 = activ(conv(
+        layer_1, 'c2', n_filters=64, filter_size=4, stride=2, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
+    layer_3 = activ(conv(
+        layer_2, 'c3', n_filters=64, filter_size=3, stride=1, pad='SAME',
+        init_scale=np.sqrt(2), **kwargs
+    ))
+    layer_3 = conv_to_fc(layer_3)
+    return activ(linear(layer_3, 'fc1', n_hidden=512, init_scale=np.sqrt(2)))
+
 # class CustomCnnLnLstmPolicy(LstmPolicy):
 #     """
 #     Policy object that implements actor critic, using a layer normalized LSTMs with a CNN feature extraction
@@ -266,47 +286,65 @@ class TensorboardCallback(BaseCallback):
 def create_cnn_lstm_ppo2_model(
             save_location: str, game_params: Sequence[Any], iters: int=7500000,
             verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_steps: int=100, lr_start: int=4.5e-4, lr_stop: int=2.5e-4
-            ) -> Tuple[PPO2, gym.Env]:
+            taper_steps: int=100, lr_start: int=7.5e-4, lr_stop: int=5e-4,
+            start_steps=2000, end_steps=10000,
+            step_incr_freq=5, tb_log=r'D:\snake_tb_logs') -> Tuple[PPO2, gym.Env]:
+    import gc
     from stable_baselines.common.policies import CnnLnLstmPolicy
 
     taper_steps = max(taper_steps, 1)
-    env = make_vec_env(SnakeEnv, n_envs=8, env_kwargs={'game_params': game_params, 'cnn_policy': True})
+    env = make_vec_env(SnakeEnv, n_envs=64, env_kwargs={'game_params': game_params, 'cnn_policy': True})
 
-    if gamma_stop:
+    if gamma_stop and iters > 1:
         gammas = np.linspace(gamma_start, gamma_stop, taper_steps)
     else:
         gammas = [gamma_start]
+
+    n_steps = start_steps
+    if step_incr_freq > 0 and start_steps != end_steps:
+        step_incr_val = step_incr_freq * (end_steps - start_steps) // taper_steps
+
     cb = TensorboardCallback()
 
     step_iters = iters // taper_steps
     lr_ranges = list(np.linspace(lr_start, lr_stop, taper_steps + 1))
     lr_schedule = LinearSchedule(step_iters, lr_ranges[1], initial_p=lr_ranges[0])
+    counter = 0
+    model = None
     for i in range(taper_steps):
         lr_schedule.initial_p = lr_ranges[i]
         lr_schedule.final_p = lr_ranges[i + 1]
         try:
-            if gammas[i] == gamma_start:
+            if gammas[i] == gamma_start or (step_incr_freq > 0 and counter % step_incr_freq == 0):
+                if model:
+                    del model
+                    gc.collect()
                 model = PPO2.load(
-                    save_location, env=env, n_steps=3000, verbose=verbose, gamma=gammas[i],
+                    save_location, env=env, n_steps=n_steps, verbose=verbose, gamma=gammas[i],
                     learning_rate=lr_schedule.value, ent_coef=.025, cliprange=0.225,
-                    nminibatches=4, tensorboard_log='tb_logs', noptepochs=3
+                    nminibatches=32, tensorboard_log=tb_log, noptepochs=4
                 )
                 print('Loaded existing model from:', save_location)
+                n_steps += step_incr_val
             else:
                 model.gamma = gammas[i]
-        except ValueError as _:
+        except ValueError as e:
+            print(e)
             print('Creating new model...')
             model = PPO2(
-                CnnLnLstmPolicy, env, verbose=verbose, gamma=gammas[i], n_steps=1750, learning_rate=lr_schedule.value,
-                cliprange=0.26, ent_coef=.03, noptepochs=3, tensorboard_log='tb_logs', nminibatches=4,
-                policy_kwargs={'cnn_extractor': modified_cnn3, 'n_lstm': 256}
+                CnnLnLstmPolicy, env, verbose=verbose, gamma=gammas[i], n_steps=1000, learning_rate=lr_schedule.value,
+                cliprange=0.275, ent_coef=.025, noptepochs=4,
+                tensorboard_log=tb_log, nminibatches=32, policy_kwargs={'cnn_extractor': modified_cnn4, 'n_lstm': 512}
             )
 
         if iters > 0:
             model.learn(total_timesteps=step_iters, callback=cb, reset_num_timesteps=False)
             model.save(save_location)
+            counter += 1
+            if state.model_snapshot_freq > 0 and counter % state.model_snapshot_freq == 0:
+                model.save(f'D:/snake_model_snapshots/snapshot_{counter}.model')
             env.reset()
             print('Saved model to:', save_location)
+            gc.collect()
 
     return model, env

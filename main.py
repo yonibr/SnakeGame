@@ -158,6 +158,7 @@ def main():
     game_params, renderer_params, other_params = parse_args()
 
     state.game = Game(*game_params)
+
     state.level_name = game_params[-1]
     state.max_key_queue_depth = other_params['max_queue_depth']
     state.direction_queue = deque()
@@ -202,11 +203,10 @@ def rl_main():
 
     tick_time = other_params['tick_time']
 
-
     filename = f'{state.board_width}x{state.board_height}_ppo2_cnn_lstm.model'
     model, env = create_cnn_lstm_ppo2_model(
         filename, game_params, iters=state.rl_training_iters, gamma_start=0.989,
-        gamma_stop=.991, taper_steps=100
+        gamma_stop=.991, taper_steps=0
     )
 
     global run_control_thread
