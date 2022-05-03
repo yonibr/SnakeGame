@@ -127,6 +127,9 @@ class NodeCollection(object):
     def __iter__(self) -> Iterator[Node]:
         return iter(self.nodes)
 
+    def __getitem__(self, item: Union[int, slice]) -> Node:
+        return self.nodes[item]
+
 
 class Snake(NodeCollection):
     def __init__(self, start_x: int, start_y: int, start_length: int):
@@ -214,7 +217,7 @@ class Level(object):
                 neighbors.append((adj_x, adj_y))
         return neighbors
 
-    def compute_mask(self, cells=None, show_changed=False):
+    def compute_mask(self, cells=None):
         if not cells:
             cells = [[False] * self.board_width for _ in range(self.board_height)]
             for node in self.wall_nodes:
@@ -259,7 +262,7 @@ class Level(object):
             ] for y in range(len(cells))
         ]
         
-        return (mask, class_idx > 1) if show_changed else mask
+        return mask
 
     def is_valid_level(self) -> bool:
         mask = self.mask
@@ -468,6 +471,11 @@ class Game(object):
             level: Union[str, Callable[[int, int], Level]]):
         self.board_width = board_width
         self.board_height = board_height
+
+        if start_x >= board_width:
+            start_x = board_width // 2 - 1
+        if start_y >= board_height:
+            start_y = board_height // 2 - 1
 
         counter = 0
         self.snake = None

@@ -39,13 +39,12 @@ game_param_names = [
     'start_x', 'start_y', 'start_length', 'board_width', 'board_height', 'speed', 'level'
 ]
 
-def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Union[float, int, str]]]:
-    from renderers import config_defaults, renderers
+def add_args(parser: argparse.ArgumentParser) -> None:
+    from renderers import renderers
     from snake import levels
 
-    parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-s', '--speed', default=DEFAULT_SPEED, type=int, choices=list(SPEED_OPTIONS.keys()),
+        '--speed', default=DEFAULT_SPEED, type=int, choices=list(SPEED_OPTIONS.keys()),
         help=f'Integer between {min_speed} (slowest) and {max_speed} (fastest) representing' +
               ' how fast the snake moves.'
     )
@@ -70,15 +69,15 @@ def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Unio
         help='The maximum number of moves to queue.'
     )
     parser.add_argument(
-        '-sx', '--start_x', type=int,
+        '-sx', '--start_x', type=int, default=DEFAULT_START_X,
         help='X coordinate of cell where the snake\'s head starts.'
     )
     parser.add_argument(
-        '-sy', '--start_y', type=int,
+        '-sy', '--start_y', type=int, default=DEFAULT_START_Y,
         help='Y coordinate of cell where the snake\'s head starts.'
     )
     parser.add_argument(
-        '-r', '--renderer', type=str, choices=renderers.keys(), default=DEFAULT_RENDERER,
+        '--renderer', type=str, choices=renderers.keys(), default=DEFAULT_RENDERER,
         help='The renderer to use.'
     )
     parser.add_argument(
@@ -103,12 +102,15 @@ def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Unio
     parser.set_defaults(show_grid=None)
     parser.set_defaults(enable_sound=False)
 
-    args = parser.parse_args()
 
-    if not args.start_x:
-        args.start_x = args.board_width // 2
-    if not args.start_y:
-        args.start_y = args.board_height // 2
+def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Union[float, int, str]]]:
+    from renderers import config_defaults, renderers
+
+    parser = argparse.ArgumentParser()
+
+    add_args(parser)
+    
+    args = parser.parse_known_args()[0]
 
     for param in high_score_params:
         setattr(state, param, getattr(args, param))
