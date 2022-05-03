@@ -15,6 +15,7 @@ board_width = None
 board_height = None
 speed = None
 input_hook = None
+shader_program_repo = None
 
 ############ Reinforcement Learning Training Variables ##############
 model_snapshot_freq = 5

@@ -9,7 +9,10 @@
 #   - Fix PGRenderer2 not working at very low FPS
 
 import itertools
+import moderngl
+import moderngl_window as mglw
 import numpy as np
+import os
 import platform
 import pygame as pg
 import subprocess
@@ -17,15 +20,27 @@ import time
 
 from abc import ABC, abstractmethod
 from enum import auto, Enum
+from moderngl_window import geometry as geom
 from pygame import gfxdraw, surfarray
 from pygame.mixer import Sound
 from pygame.time import Clock
+from pyrr import Matrix44
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import state
 
 from main import exit_game, handle_input
+from opengl_renderer import (
+    Font,
+    FontBook,
+    InstancedObject,
+    ProgramRepository,
+    Scene,
+    TextRenderer,
+    Transform3D
+)
 from snake import Direction, Game, Node, Snake
+from snake_args import add_args
 from themes import Theme, themes
 from utils import (
     game_over_text, get_high_scores, parse_key, SetInterval, update_high_scores
@@ -1169,11 +1184,211 @@ if platform.system() != 'Windows':
             self.stdscr.addstr(y, x, s, curses.color_pair(3))
             self.stdscr.refresh()
 
+
+class OpenGLRenderer(mglw.WindowConfig, Renderer):
+    title = 'Snake'
+    gl_version = (3, 3)
+    window_size = (1920, 1080)
+    aspect_ratio = 16 / 9
+    resizable = True
+    samples = 8
+
+    resource_dir = os.path.normpath(os.path.join(__file__, '../resources'))
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.initialize(state.game, theme=self.argv.theme)
+
+    # We want to add the snake arguments to this class so it doesn't fail when parsing
+    @classmethod
+    def add_arguments(cls, parser):
+        add_args(parser)
+
+    def initialize(self, game: Game, **kw_args: Any) -> None:
+        state.shader_program_repo = ProgramRepository()
+        self.game = game
+
+        self.theme = themes[kw_args['theme']]
+        self.background_color = tuple(x / 255 for x in self.theme.background)
+
+        self.scene = Scene(self.game, self.theme, aspect_ratio=self.aspect_ratio)
+        self.font_book = FontBook()
+
+        viewport = mglw.ctx().fbo.viewport
+        self.viewport_width = viewport[2] - viewport[0]
+        self.viewport_height =  viewport[3] - viewport[1]
+
+        self.orthogonal_proj = Matrix44.orthogonal_projection(
+            0,  # left
+            self.viewport_width,  # right
+            0,  # bottom
+            self.viewport_height,  # top
+            1.0,  # near
+            -1.0,  # far
+            dtype='f4'
+        )
+
+        self.font = self.font_book['SFNSMono', 64]
+
+        self.score_renderer = None
+        self.level_renderer = None
+        self.fps_renderer = None
+        self.length_renderer = None
+        self.game_over_renderer = None
+        self.high_scores_renderer = None
+
+        self.elapsed_time = self.frames = self.fps = 0
+
+        # tex = self.load_texture_2d('images/test.png')
+        
+        # from opengl_renderer import TexturedQuad
+        # self.quad = TexturedQuad(tex)
+        # self.quad = TexturedQuad(self.font.texture)
+
+    def key_event(self, key, action, modifiers):
+        if action == self.wnd.keys.ACTION_PRESS:
+            if key == self.wnd.keys.UP:
+                handle_input('up', False)
+            elif key == self.wnd.keys.DOWN:
+                handle_input('down', False)
+            elif key == self.wnd.keys.LEFT:
+                handle_input('left', False)
+            elif key == self.wnd.keys.RIGHT:
+                handle_input('right', False)
+        elif action == self.wnd.keys.ACTION_RELEASE:
+            if key == self.wnd.keys.ESCAPE:
+                handle_input('escape', True)
+
+    def render(self, time, frame_time):
+        self.elapsed_time += frame_time
+        self.frames += 1
+        if self.elapsed_time >= 1:
+            self.fps = self.frames / self.elapsed_time
+            self.frames = self.elapsed_time = 0
+
+        self.ctx.clear(*self.background_color)
+        self.scene.render(time, frame_time)
+        self.ctx.enable(moderngl.BLEND)
+        self.draw_all_text()
+
+    def game_over(self, game: Game) -> None:
+        pass
+
+    def run(self, game: Game) -> None:
+        pass
+
+    def draw_fps(self) -> None:
+        if not self.fps_renderer:
+            self.fps_renderer = TextRenderer(
+                self.font, f'FPS: {self.fps: 0.1f}', self.theme.text, 10, self.viewport_height - 10
+            )
+        else:
+            self.fps_renderer.text = f'FPS: {self.fps: 0.1f}'
+        self.fps_renderer.render(self.orthogonal_proj)
+
+    def draw_score(self, score: int) -> None:
+        if not self.score_renderer:
+            self.score_renderer = TextRenderer(
+                self.font, f'Score: {score}', self.theme.text, self.viewport_width / 2,
+                self.viewport_height - 10, which_point='midtop'
+            )
+        else:
+            self.score_renderer.text = f'Score: {score}'
+        self.score_renderer.render(self.orthogonal_proj)
+
+    def draw_length(self, length: int) -> None:
+        if not self.length_renderer:
+            self.length_renderer = TextRenderer(
+                self.font, f'Length: {length}', self.theme.text, self.viewport_width - 10,
+                self.viewport_height - 10, which_point='topright'
+            )
+        else:
+            self.length_renderer.text = f'Length: {length}'
+        self.length_renderer.render(self.orthogonal_proj)
+
+    def draw_level_name(self) -> None:
+        if not self.level_renderer:
+            self.level_renderer = TextRenderer(
+                self.font, f'Level: {state.level_name}', self.theme.text, self.viewport_width / 2,
+                10, which_point='midbottom'
+            )
+        else:
+            self.level_renderer.text = f'Level: {state.level_name}'
+        self.level_renderer.render(self.orthogonal_proj)
+
+    def draw_game_over_text(self):
+        if not self.game_over_renderer:
+            text = game_over_text(self.game, update_high_scores(self.game))
+            self.game_over_renderer = TextRenderer(
+                self.font, text, self.theme.text, self.viewport_width / 2,
+                self.viewport_height * 0.7, which_point='midbottom'
+            )
+        self.game_over_renderer.render(self.orthogonal_proj)
+
+    def draw_high_scores(self, top_n=5) -> None:
+        if not self.high_scores_renderer:
+            scores, lengths = get_high_scores(top_n=top_n)
+            scores = [' ' * (6 - len(s)) + s for s in scores]
+
+            text = '\n'.join([
+                ' Score  Length\n',
+                '\n'.join(map('  '.join, zip(scores, lengths)))
+            ])
+
+            self.high_scores_renderer = TextRenderer(
+                self.font, text, self.theme.text, self.viewport_width / 2,
+                self.viewport_height * 0.4, which_point='midtop'
+            )
+
+            self.high_score_horiz_line = InstancedObject(
+                1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
+                vao_generator_kwargs={
+                    'size': (self.font.char_width * 16, 6),
+                    'pos': (
+                        self.viewport_width / 2,
+                        self.viewport_height * 0.4 - self.font.char_height * 1.5 + 3
+                    )
+                }
+            )
+            self.high_score_vert_line = InstancedObject(
+                1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
+                vao_generator_kwargs={
+                    'size': (6, self.font.char_height * (top_n + 3)),
+                    'pos': (
+                        self.viewport_width / 2,
+                        self.viewport_height * 0.4 - self.font.char_height * (top_n + 1.5) / 2
+                    )
+                }
+            )
+
+        self.high_score_horiz_line.render(write_uniforms={'Mvp': self.orthogonal_proj})
+        self.high_score_vert_line.render(write_uniforms={'Mvp': self.orthogonal_proj})
+        self.high_scores_renderer.render(self.orthogonal_proj)
+
+
+    def draw_all_text(self):
+        # self.quad.render()
+        self.draw_fps()
+        self.draw_length(len(self.game.snake))
+        if self.game.game_over:
+            self.draw_game_over_text()
+            self.draw_high_scores()
+        else:
+            self.draw_score(self.game.score)
+        self.draw_level_name()
+
+    @classmethod
+    def start(cls):
+        mglw.run_window_config(cls)
+
+
 renderers = {
     'PG': PGRenderer,
     'PG2': PGRenderer2,
     'PG3': PGRenderer3,
-    'CL': CLRenderer
+    'CL': CLRenderer,
+    'OpenGL': OpenGLRenderer
 }
 
 if platform.system() != 'Windows':

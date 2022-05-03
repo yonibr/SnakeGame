@@ -1,7 +1,6 @@
 # TODO:
 #   - Optionally allow speed increase if you press the same direction you're already travelling
 #   - Don't initialize pygame when renderer isn't a pygame renderer
-#   - Figure out if I should use a deque instead of list for the direction_queue
 #   - Add value sanity checking to command line arguments
 #   - In-game way to view high scores for games with different configurations (with scrolling or
 #     pages, selecting filters for what configurations to show, etc.)
@@ -166,22 +165,25 @@ def main():
 
     renderer_name = other_params['renderer']
 
-    cl_renderer = renderer_name == 'CL'
     state.run = True
-
-    renderer = renderers[renderer_name]()
 
     tick_time = other_params['tick_time']
 
-    state.interval = SetInterval(tick_time, 1.5, loop, callback, state.game)
 
-    renderer.initialize(state.game, tick_time=tick_time, **renderer_params)
+    if renderer_name != 'OpenGL':
+        renderer = renderers[renderer_name]()
 
-    if cl_renderer:
-        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-        listener.start()
+        renderer.initialize(state.game, tick_time=tick_time, **renderer_params)
 
-    renderer.run(state.game)
+        if renderer_name == 'CL':
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            listener.start()
+
+        state.interval = SetInterval(tick_time, 2, loop, callback, state.game)
+        renderer.run(state.game)
+    else:
+        state.interval = SetInterval(tick_time, 10, loop, callback, state.game)
+        renderers[renderer_name].start()
 
 
 def rl_main():
@@ -239,7 +241,7 @@ def rl_main():
 
 
 if __name__ == '__main__':
-    # import cProfile
-    # cProfile.run('main()', 'restats')
+    import cProfile
+    cProfile.run('main()', 'restats')
     # main()
-    rl_main()
+    # rl_main()
