@@ -1,5 +1,31 @@
 #version 330 core
 
+#if defined VERTEX_SHADER
+
+uniform vec3 in_color;
+
+in mat4 model;
+in mat3 normal_mat;
+in mat4 mvp;
+in vec3 in_position;
+in vec3 in_normal;
+
+out vec3 FragPos;
+out vec3 Normal;
+out vec3 Color;
+
+
+void main()
+{
+    Color = in_color;
+    Normal = normal_mat * in_normal;
+    FragPos = vec3(model * vec4(in_position, 1.0));
+    
+    gl_Position = mvp * vec4(in_position, 1.0);
+}
+
+#elif defined FRAGMENT_SHADER
+
 uniform float specularStrength;
 
 uniform LightPos
@@ -28,7 +54,7 @@ void main()
     // ambient
     float ambientStrength = 0.1;
     vec3 ambient = ambientStrength * lightColor.val;
-  	
+    
     // diffuse 
     vec3 norm = normalize(Normal);
     vec3 lightDir = normalize(lightPos.val - FragPos);
@@ -43,4 +69,6 @@ void main()
         
     vec3 result = (ambient + diffuse + specular) * Color;
     FragColor = vec4(result, 1.0);
-} 
+}
+
+#endif

@@ -5,7 +5,7 @@
 #      see moderngl example growing_buffers.py
 #    - Shadows
 #    - destroy resources
-#    - Thicker, antialiased lines
+#    - Add sun
 
 import math
 import moderngl
@@ -29,9 +29,14 @@ from snake import Game, Snake
 from themes import Color, Theme
 
 
+def get_viewport_dimensions() -> Tuple[int, int]:
+    viewport = mglw.ctx().fbo.viewport
+    return viewport[2] - viewport[0], viewport[3] - viewport[1]
+
 class ShaderProgram(object):
-    def __init__(self, program: moderngl.Program):
+    def __init__(self, program: moderngl.Program, name: str):
         self.program = program
+        self.name = name
         self.uniforms = {
             name: program[name] for name in program if isinstance(program[name], moderngl.Uniform)
         }
@@ -40,18 +45,18 @@ class ShaderProgram(object):
     def write_uniform(self, name: str, value: Any) -> None:
         if name in self.uniforms:
             self.uniforms[name].write(value)
-        else:
-            print(name)
+        # else:
+            # print(f'Trying to set uniform "{name}" which is not present in program {self.name}.')
 
     def set_uniform_value(self, name: str, value: Any) -> None:
         if name in self.uniforms:
             self.uniforms[name].value = value
-        else:
-            print(name)
+        # else:
+            # print(f'Trying to set uniform "{name}" which is not present in program {self.name}.')
 
 
 class ProgramRepository(Mapping):  # FIXME: safer path handling
-    def __init__(self, res_dir: str='resources/shaders'):
+    def __init__(self, res_dir: str='shaders'):
         self.programs = {}
         self.dir = res_dir
 
@@ -66,11 +71,10 @@ class ProgramRepository(Mapping):  # FIXME: safer path handling
 
     def __getitem__(self, item: str) -> ShaderProgram:
         if item not in self:
-            with open(f'{self.dir}/{item}.vs') as vs, open(f'{self.dir}/{item}.fs') as fs:
-                print(f'Loading program "{item}" with uniforms', end=' ')
-                self.programs[item] = ShaderProgram(
-                    mglw.ctx().program(vertex_shader=vs.read(), fragment_shader=fs.read())
-                )
+            print(f'Loading program "{item}" with uniforms', end=' ')
+            self.programs[item] = ShaderProgram(
+                mglw.window().config.load_program(path=f'{self.dir}/{item}.glsl'), item
+            )
         return self.programs[item]
 
 
@@ -229,7 +233,7 @@ class TextRenderer(Renderable):
         self.program = state.shader_program_repo['font']
         self.font = font
         self.which_point = which_point
-        self.color = color.r / 255, color.b / 255, color.g / 255
+        self.color = color.r / 255, color.g / 255, color.b / 255
         self.x = x
         self.y = y
         self.vaos = []
@@ -363,8 +367,7 @@ class TextRenderer(Renderable):
 
 class TexturedQuad(Renderable):
     def __init__(self, texture: moderngl.Texture):
-        vp = mglw.ctx().fbo.viewport
-        w, h = vp[2] - vp[0], vp[3] - vp[1]
+        w, h = get_viewport_dimensions()
         self.quad = geom.quad_2d(size=(w, h), pos=(w / 2, h / 2))
         self.texture = texture
         self.program = state.shader_program_repo['font']
@@ -376,15 +379,6 @@ class TexturedQuad(Renderable):
         self.texture.use(location=0)
 
         self.quad.render(self.program.program)
-
-
-class Light(object):
-    def __init__(self, pos: Vector3, color: Color):
-        ctx = mglw.ctx()
-        self.pos = pos
-        self.color = color
-        self.pos_buffer = ctx.buffer(pos)
-        self.color_buffer = ctx.buffer(Vector3(color, dtype='f4'))
 
 
 class InstancedObject(Renderable):
@@ -469,16 +463,70 @@ class InstancedObject(Renderable):
 
     def render(
             self,
-            value_uniforms: Optional[Mapping[str, Any]]={},
-            write_uniforms: Optional[Mapping[str, Any]]={}) -> None:
-        if self.color is not None:
-            self.program.write_uniform('in_color', self.color)
-        for name, value in value_uniforms.items():
-            self.program.set_uniform_value(name, value)
-        for name, value in write_uniforms.items():
-            self.program.write_uniform(name, value)
+            value_uniforms: Optional[Mapping[str, Any]]=None,
+            write_uniforms: Optional[Mapping[str, Any]]=None,
+            override_program: Optional[ShaderProgram]=None) -> None:
+        program = override_program if override_program else self.program
 
-        self.vao.render(self.program.program, instances=self.instance_count)
+        if self.color is not None:
+            program.write_uniform('in_color', self.color)
+
+        if value_uniforms:
+            for name, value in value_uniforms.items():
+                program.set_uniform_value(name, value)
+        if write_uniforms:
+            for name, value in write_uniforms.items():
+                program.write_uniform(name, value)
+
+        self.vao.render(program.program, instances=self.instance_count)
+
+
+class Light(Renderable):  # TODO figure out perspective projection
+    def __init__(
+            self,
+            pos: Vector3,
+            color: Color,
+            radius: float=5.0,
+            brightness=2.0,
+            rendered_color: Color=Color(249, 215, 28),
+            aspect_ratio: float=1.0):
+        ctx = mglw.ctx()
+        self.pos = pos
+        self.color = color.r / 255, color.g / 255, color.b / 255
+        self.brightness = brightness
+        self.pos_buffer = ctx.buffer(pos)
+        self.color_buffer = ctx.buffer(Vector3(self.color, dtype='f4'))
+
+        # self.proj = Matrix44.perspective_projection(
+        #     45, aspect_ratio, 1.0, self.pos[2] * 2, dtype='f4'
+        # )
+
+        self.proj = Matrix44.orthogonal_projection(
+            -100, 100, -100, 100, 0.1, self.pos[2] * 2.0, dtype='f4'
+        )
+        self.view = Matrix44.look_at(
+            pos, (0, 0, 0), (0, 0, 1), dtype='f4'
+        )
+        self.view_proj = self.proj * self.view
+        self.view_proj_buffer = ctx.buffer(self.view_proj)
+
+        transforms = Transform3D(translation=pos)
+        self.sphere = InstancedObject(
+            1, geom.sphere, 'lighting', rendered_color, [transforms],
+            vao_generator_kwargs={'radius': radius, 'sectors': 64, 'rings': 64}
+        )
+
+        self.should_update = True
+
+    def update(self, view_proj: Matrix44) -> None:
+        if self.should_update:
+            self.sphere.update(view_proj)
+            self.should_update = False
+
+    def render(self):
+        self.sphere.render(value_uniforms={
+            'is_light_source': True, 'brightness_mult': self.brightness
+        })
 
 
 class SnakeRenderer(Renderable):
@@ -495,12 +543,12 @@ class SnakeRenderer(Renderable):
         self.snake_length = len(transforms)
 
         self.instanced_cube = InstancedObject(
-            len(transforms), geom.cube, 'basic_lighting', theme.snake, transforms,
+            len(transforms), geom.cube, 'lighting', theme.snake, transforms,
             vao_generator_kwargs={'size':(2.0, 2.0, 2.0)}
         )
 
         self.instanced_sphere = InstancedObject(
-            2, geom.sphere, 'basic_lighting', theme.eyes, self.get_eye_transforms(),
+            2, geom.sphere, 'lighting', theme.eyes, self.get_eye_transforms(),
             vao_generator_kwargs={'radius': 0.25}
         )
 
@@ -563,9 +611,15 @@ class SnakeRenderer(Renderable):
 
             self.first_update = False
 
-    def render(self) -> None:
-        self.instanced_cube.render(value_uniforms={'specularStrength': 0.1})
-        self.instanced_sphere.render(value_uniforms={'specularStrength': 1.0})
+    def render(self, override_program: Optional[ShaderProgram]=None) -> None:
+        self.instanced_cube.render(
+            value_uniforms={'specularStrength': 0.1, 'is_light_source': False},
+            override_program=override_program
+        )
+        self.instanced_sphere.render(
+            value_uniforms={'specularStrength': 1.0, 'is_light_source': False},
+            override_program=override_program
+        )
 
 
 class WallRenderer(Renderable):
@@ -583,7 +637,7 @@ class WallRenderer(Renderable):
         ]
 
         self.instanced_cube = InstancedObject(
-            len(self.walls), geom.cube, 'basic_lighting', theme.walls, transforms,
+            len(self.walls), geom.cube, 'lighting', theme.walls, transforms,
             vao_generator_kwargs={'size':(2.0, 2.0, 2.0)}
         )
 
@@ -603,10 +657,12 @@ class WallRenderer(Renderable):
             self.instanced_cube.update(view_proj)
 
             self.first_update = False
-            
 
-    def render(self) -> None:
-        self.instanced_cube.render(value_uniforms={'specularStrength': 0.6})
+    def render(self, override_program: Optional[ShaderProgram]=None) -> None:
+        self.instanced_cube.render(
+            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            override_program=override_program
+        )
 
 
 class FoodRenderer(Renderable):
@@ -615,7 +671,7 @@ class FoodRenderer(Renderable):
         self.food_pos = game.food.pos
 
         self.sphere = InstancedObject(
-            1, geom.sphere, 'basic_lighting', theme.food, [Transform3D()],
+            1, geom.sphere, 'lighting', theme.food, [Transform3D()],
             vao_generator_kwargs={'radius': 0.9}
         )
 
@@ -635,11 +691,14 @@ class FoodRenderer(Renderable):
 
             self.first_update = False
             
-    def render(self) -> None:
-        self.sphere.render(value_uniforms={'specularStrength': 0.6})
+    def render(self, override_program: Optional[ShaderProgram]=None) -> None:
+        self.sphere.render(
+            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            override_program=override_program
+        )
 
 
-class Board(Renderable):
+class BoardRenderer(Renderable):
     def __init__(self, board_width: int, board_height: int, theme: Theme):
         ctx = mglw.ctx()
 
@@ -661,26 +720,133 @@ class Board(Renderable):
         ]
 
         self.grid = InstancedObject(
-            board_width + board_height - 2, geom.quad_2d, 'basic_lighting', theme.grid, transforms
+            board_width + board_height - 2, geom.quad_2d, 'lighting', theme.grid, transforms
         )
 
-        self.first_render = True
+        self.should_update = True
 
         transforms = Transform3D(
             translation=Vector3([0, 0, -0.05], dtype='f4'),
             scale=Vector3([board_width * 2, board_height * 2, 1], dtype='f4')
         )
 
-        self.quad = InstancedObject(1, geom.quad_2d, 'basic_lighting', theme.background, [transforms])
+        self.quad = InstancedObject(1, geom.quad_2d, 'lighting', theme.background, [transforms])
 
-    def render(self, view_proj: Matrix44, light: Light, camera_pos: Tuple[int, int, int]) -> None:
-        if self.first_render:
-            self.first_render = False
+    def update(self, view_proj: Matrix44) -> None:
+        if self.should_update:
+            self.should_update = False
             self.quad.update(view_proj)
             self.grid.update(view_proj)
 
-        self.quad.render(value_uniforms={'specularStrength': 0.6})
-        self.grid.render(value_uniforms={'specularStrength': 0.0})
+    def render(self, override_program: Optional[ShaderProgram]=None) -> None:
+        self.quad.render(
+            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            override_program=override_program
+        )
+        self.grid.render(
+            value_uniforms={'specularStrength': 0.0, 'is_light_source': False},
+            override_program=override_program
+        )
+
+
+class ShadowMap(Renderable):
+    def __init__(self, width: int=4096, height: int=4096):
+        # Offscreen buffer
+        self.width, self.height = width, height
+        self.shadow_map = mglw.ctx().depth_texture((self.width, self.height))
+        self.shadow_map.compare_func = ''
+        self.shadow_map.repeat_x = False
+        self.shadow_map.repeat_y = False
+
+        # Less ugly by default with linear. May need to be NEAREST for some techniques
+        self.shadow_map.filter = moderngl.LINEAR, moderngl.LINEAR
+
+        self.frame_buffer = mglw.ctx().framebuffer(depth_attachment=self.shadow_map)
+
+    def render(self, renderables: Sequence[Renderable]):
+        self.frame_buffer.clear()
+        self.frame_buffer.use()
+
+        prog = state.shader_program_repo['shadow_map_depth']
+
+        for renderable in renderables:
+            renderable.render(override_program=prog)
+
+
+class HDRBloomRenderer(Renderable): # TODO: Multisampling
+    def __init__(self):
+        viewport_dimensions = get_viewport_dimensions()
+        ctx = mglw.ctx()
+
+        self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
+        self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
+
+        self.ping_pong_textures = [
+            ctx.texture(viewport_dimensions, 4, samples=0, dtype='f2'),
+            ctx.texture(viewport_dimensions, 4, samples=0, dtype='f2')
+        ]
+        for texture in chain(self.ping_pong_textures, [self.scene_texture, self.brightness_texture]):
+            texture.repeat_x = False
+            texture.repeat_y = False
+            texture.filter = moderngl.LINEAR, moderngl.LINEAR
+
+        self.hdr_framebuffer = ctx.framebuffer(
+            depth_attachment=ctx.depth_texture(viewport_dimensions), color_attachments=[
+                self.scene_texture,
+                self.brightness_texture
+            ]
+        )
+
+        self.ping_pong_framebuffers = [
+            ctx.framebuffer(color_attachments=[self.ping_pong_textures[0]]),
+            ctx.framebuffer(color_attachments=[self.ping_pong_textures[1]])
+        ]
+
+        self.blur_program = state.shader_program_repo['blur']
+
+        self.quad = InstancedObject(
+            1, geom.quad_2d, 'bloom_final', None, [Transform3D()], vao_generator_kwargs={'size': (2.0, 2.0)}
+        )
+
+        prog = state.shader_program_repo['bloom_final'].program
+        prog['scene'].value = 0
+        prog['bloomBlur'].value = 1
+
+    def blur(self) -> bool:
+        self.ping_pong_framebuffers[0].clear()
+        self.ping_pong_framebuffers[1].clear()
+
+        horizontal = True
+        first_iteration = True
+        amount = 10
+        for i in range(amount):
+            self.ping_pong_framebuffers[horizontal].use()
+
+            if first_iteration:
+                self.brightness_texture.use()
+                first_iteration = False
+            else:
+                self.ping_pong_textures[not horizontal].use()
+
+            self.quad.render(override_program=self.blur_program, value_uniforms={'horizontal': horizontal})
+
+            horizontal = not horizontal
+
+        return not horizontal
+
+    def render(self, renderables: Sequence[Renderable]) -> None:
+        self.hdr_framebuffer.clear()
+        self.hdr_framebuffer.use()
+
+        for renderable in renderables:
+            renderable.render()
+
+        horizontal = self.blur()
+
+        mglw.ctx().screen.use()
+        self.scene_texture.use(location=0)
+        self.ping_pong_textures[horizontal].use(location=1)
+        self.quad.render(value_uniforms={'bloom': True, 'exposure': 1.0})
 
 
 class Scene(Renderable):
@@ -692,22 +858,35 @@ class Scene(Renderable):
         self.game = game
         self.board_width = game.board_width
         self.board_height = game.board_height
-        self.board = Board(self.board_width, self.board_height, theme)
 
         max_dim = max(self.board_width / aspect_ratio, self.board_height)
         
-        self.camera_pos = 0.0, max_dim * 1.65, max_dim * 2.25
+        # self.camera_pos = 0.0, max_dim * 2.5, max_dim * 3.5
+        self.camera_pos = 0.0, max_dim * 1.75, max_dim * 2.9
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
 
         self.proj = Matrix44.perspective_projection(
             45.0, self.aspect_ratio, 0.1, self.camera_pos[2] * 2, dtype='f4'
         )
         self.view = Matrix44.look_at(
-            self.camera_pos, (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), dtype='f4'
+            self.camera_pos, (0, 0, 0), (0, 0, 1), dtype='f4'
         )
         self.view_proj = self.proj * self.view
 
-        self.light = Light(Vector3([max_dim / 2, max_dim * 0.2, max_dim * 1.25], dtype='f4'), Color(1.0, 1.0, 1.0))
+        self.shadow_map = ShadowMap()
+
+        light_pos = [max_dim * 0.9, -max_dim * .5, max_dim * 1.3]
+        # light_pos = [10, 25, 50]
+        # light_pos = self.camera_pos
+        self.light = Light(
+            Vector3(light_pos, dtype='f4'), Color(255, 255, 255),
+            aspect_ratio=self.shadow_map.width / self.shadow_map.height
+        )
+        self.light.update(self.view_proj)
+
+        # Create board
+        self.board_renderer = BoardRenderer(self.board_width, self.board_height, theme)
+        self.board_renderer.update(self.view_proj)
 
         # Create walls
         self.wall_renderer = WallRenderer(game, theme)
@@ -718,17 +897,33 @@ class Scene(Renderable):
         # Create food
         self.food_renderer = FoodRenderer(game, theme)
 
-        prog = state.shader_program_repo['basic_lighting'].program
+        prog = state.shader_program_repo['lighting'].program
         prog['LightPos'].binding = 1
         prog['LightColor'].binding = 2
         prog['ViewPos'].binding = 3
+        prog['LightSpaceMatrix'].binding = 4
+
+        prog = state.shader_program_repo['shadow_map_depth'].program
+        prog['LightSpaceMatrix'].binding = 4
 
         self.scope = ctx.scope(
-            ctx.screen, moderngl.DEPTH_TEST | moderngl.CULL_FACE, uniform_buffers=[
+            None, moderngl.DEPTH_TEST | moderngl.CULL_FACE, uniform_buffers=[
                 (self.light.pos_buffer, 1),
                 (self.light.color_buffer, 2),
-                (self.camera_pos_buffer, 3)
+                (self.camera_pos_buffer, 3),
+                (self.light.view_proj_buffer, 4)
         ])
+
+        # Create HDR Bloom renderer
+        self.hdr_bloom_renderer = HDRBloomRenderer()
+
+        # self.debug_quad = geom.quad_2d()
+
+        self.shadow_map_pass_renderables = [
+            self.board_renderer, self.snake_renderer, self.wall_renderer, self.food_renderer
+        ]
+
+        self.hdr_bloom_pass_renderables = [*self.shadow_map_pass_renderables, self.light]
 
     @staticmethod
     def grid_position(x: int, y: int, width: int, height: int) -> Vector3:
@@ -745,7 +940,11 @@ class Scene(Renderable):
         self.update()
 
         with self.scope:
-            self.board.render(self.view_proj, self.light, self.camera_pos)
-            self.snake_renderer.render()
-            self.wall_renderer.render()
-            self.food_renderer.render()
+            # Render shadow map
+            self.shadow_map.render(self.shadow_map_pass_renderables)
+
+            # Render to screen
+            mglw.ctx().screen.use()
+            
+            self.shadow_map.shadow_map.use(location=0)
+            self.hdr_bloom_renderer.render(self.hdr_bloom_pass_renderables)

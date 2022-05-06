@@ -1,11 +1,8 @@
 # TODO:
 #   - Print out high scores in CLRenderer
-#   - Draw level name on the bottom wall
 #   - Make curses renderer work even if curses.has_colors() is false
-#   = Handle curses being run on windows
 #   - Make it so scale factor decreases if window size would be to big for the screen
 #   - Make font size depend on scale factor
-#   - OpenGL 3D renderer
 #   - Fix PGRenderer2 not working at very low FPS
 
 import itertools
@@ -33,6 +30,7 @@ from main import exit_game, handle_input
 from opengl_renderer import (
     Font,
     FontBook,
+    get_viewport_dimensions,
     InstancedObject,
     ProgramRepository,
     Scene,
@@ -1197,6 +1195,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.wnd.config = self
 
         self.initialize(state.game, theme=self.argv.theme)
 
@@ -1215,9 +1214,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.scene = Scene(self.game, self.theme, aspect_ratio=self.aspect_ratio)
         self.font_book = FontBook()
 
-        viewport = mglw.ctx().fbo.viewport
-        self.viewport_width = viewport[2] - viewport[0]
-        self.viewport_height =  viewport[3] - viewport[1]
+        self.viewport_width,  self.viewport_height = get_viewport_dimensions()
 
         self.orthogonal_proj = Matrix44.orthogonal_projection(
             0,  # left
