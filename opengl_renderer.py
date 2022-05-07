@@ -487,7 +487,7 @@ class Light(Renderable):  # TODO figure out perspective projection
             pos: Vector3,
             color: Color,
             radius: float=5.0,
-            brightness=2.0,
+            brightness=5.0,
             rendered_color: Color=Color(249, 215, 28),
             aspect_ratio: float=1.0):
         ctx = mglw.ctx()
@@ -781,9 +781,11 @@ class HDRBloomRenderer(Renderable): # TODO: Multisampling
         self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
 
+        ping_pong_dimensions = viewport_dimensions[0] // 4, viewport_dimensions[1] // 4
+
         self.ping_pong_textures = [
-            ctx.texture(viewport_dimensions, 4, samples=0, dtype='f2'),
-            ctx.texture(viewport_dimensions, 4, samples=0, dtype='f2')
+            ctx.texture(ping_pong_dimensions, 4, dtype='f2'),
+            ctx.texture(ping_pong_dimensions, 4, dtype='f2')
         ]
         for texture in chain(self.ping_pong_textures, [self.scene_texture, self.brightness_texture]):
             texture.repeat_x = False
@@ -813,12 +815,9 @@ class HDRBloomRenderer(Renderable): # TODO: Multisampling
         prog['bloomBlur'].value = 1
 
     def blur(self) -> bool:
-        self.ping_pong_framebuffers[0].clear()
-        self.ping_pong_framebuffers[1].clear()
-
         horizontal = True
         first_iteration = True
-        amount = 10
+        amount = 14
         for i in range(amount):
             self.ping_pong_framebuffers[horizontal].use()
 
