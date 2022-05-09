@@ -856,7 +856,7 @@ class Scene(Renderable):
 
         light_pos = [max_dim * 0.9, -max_dim * .5, max_dim * 1.3]
         self.light = Light(
-            Vector3(light_pos, dtype='f4'), Color(255, 255, 255),
+            Vector3(light_pos, dtype='f4'), Color(255, 255, 255), radius=max_dim / 4,
             aspect_ratio=self.shadow_map.width / self.shadow_map.height
         )
         self.light.update(self.view_proj)
