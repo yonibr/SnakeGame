@@ -28,17 +28,17 @@ out vec4 FragColor;
 void main()
 {
     const float gamma = 2.2;
+    const vec3 correction_vec = vec3(1.0 / gamma);
 
     vec3 hdrColor = texture(scene, TexCoords).rgb;
     if (bloom)
         hdrColor += texture(bloomBlur, TexCoords).rgb; // additive blending
-//    hdrColor = texture(bloomBlur, TexCoords).rgb;
 
     // tone mapping
     vec3 result = vec3(1.0) - exp(-hdrColor * exposure);
 
-    // also gamma correct while we're at it
-    result = pow(result, vec3(1.0 / gamma));
+    // Gamma correction
+    result = pow(result, correction_vec);
 
     FragColor = vec4(result, 1.0);
 }

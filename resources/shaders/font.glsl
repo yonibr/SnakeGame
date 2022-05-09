@@ -25,9 +25,13 @@ in vec2 TexCoords;
 out vec4 FragColor;
 
 void main()
-{    
-    vec4 sampled = vec4(1.0, 1.0, 1.0, texture(texture, TexCoords).r);
-    FragColor = vec4(text_color, 1.0) * sampled;
+{
+    const float gamma = 2.2;
+    const vec3 correction_vec = vec3(1.0 / gamma);
+
+    float alpha = texture(texture, TexCoords).r;
+    vec3 gamma_corrected_color = pow(text_color, correction_vec);
+    FragColor = vec4(gamma_corrected_color, alpha);
 }
 
 #endif
