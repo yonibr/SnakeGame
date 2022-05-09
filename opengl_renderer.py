@@ -3,35 +3,33 @@
 #    - Procedurally generated tapered snake body
 #    - When adding instances, grow buffers rather than just deleting and recreating;
 #      see moderngl example growing_buffers.py
-#    - Shadows
 #    - destroy resources
-#    - Add sun
+#    - Antialiasing
+#    - Sounds
 
-import math
 import moderngl
 import moderngl_window as mglw
 import numpy as np
-import os
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping as MappingABC
 from freetype import Face, FT_LOAD_FORCE_AUTOHINT, FT_LOAD_RENDER
 from itertools import chain
 from moderngl_window import geometry as geom
 from moderngl_window.opengl.vao import VAO
 from pyrr import Matrix33, Matrix44, Vector3
-from typing import Any, Callable, Dict, Mapping, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Mapping, List, Optional, Sequence, Tuple
 
 import state
 
-from main import handle_input
-from snake import Game, Snake
+from snake import Game
 from themes import Color, Theme
 
 
 def get_viewport_dimensions() -> Tuple[int, int]:
     viewport = mglw.ctx().fbo.viewport
     return viewport[2] - viewport[0], viewport[3] - viewport[1]
+
 
 class ShaderProgram(object):
     def __init__(self, program: moderngl.Program, name: str):
@@ -55,7 +53,7 @@ class ShaderProgram(object):
             # print(f'Trying to set uniform "{name}" which is not present in program {self.name}.')
 
 
-class ProgramRepository(Mapping):  # FIXME: safer path handling
+class ProgramRepository(MappingABC):  # FIXME: safer path handling
     def __init__(self, res_dir: str='shaders'):
         self.programs = {}
         self.dir = res_dir
@@ -64,10 +62,10 @@ class ProgramRepository(Mapping):  # FIXME: safer path handling
         return other in self.programs
 
     def __iter__(self):
-        return iter(programs)
+        return iter(self.programs)
 
     def __len__(self) -> int:
-        return len(programs)
+        return len(self.programs)
 
     def __getitem__(self, item: str) -> ShaderProgram:
         if item not in self:
@@ -154,7 +152,7 @@ class Transform3D(object):
 
 class Renderable(ABC):
     @abstractmethod
-    def render(self, *args: Any) -> None:
+    def render(self, *args: Any, **kwargs: Any) -> None:
         pass
 
 
@@ -164,41 +162,41 @@ class Font(object):
         face = Face(f'resources/fonts/{font_name}.ttf')
         face.set_char_size(size * 64)
         if not face.is_fixed_width:
-            raise ValueError('Font is not monotype')
+            raise ValueError('Font is not monotype.')
 
         # Determine largest glyph size
         width, height, ascender, descender = 0, 0, 0, 0
         for c in range(32, 128):
-            face.load_char( chr(c), FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT)
-            bitmap    = face.glyph.bitmap
-            width     = max( width, bitmap.width )
-            ascender  = max( ascender, face.glyph.bitmap_top )
-            descender = max( descender, bitmap.rows-face.glyph.bitmap_top )
+            face.load_char(chr(c), FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT)
+            bitmap = face.glyph.bitmap
+            width = max(width, bitmap.width)
+            ascender = max(ascender, face.glyph.bitmap_top)
+            descender = max(descender, bitmap.rows-face.glyph.bitmap_top)
         height = ascender + descender
 
         self.char_width = width
         self.char_height = height
 
         # Generate texture data
-        Z = np.zeros((height * 6, width * 16), dtype='u1')
+        data = np.zeros((height * 6, width * 16), dtype='u1')
         for j in range(5, -1, -1):
             for i in range(16):
                 face.load_char(chr(32 + j * 16 + i), FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT)
                 bitmap = face.glyph.bitmap
                 x = i * width + face.glyph.bitmap_left
                 y = j * height + ascender - face.glyph.bitmap_top
-                Z[y:y + bitmap.rows, x:x + bitmap.width].flat = bitmap.buffer
+                data[y:y + bitmap.rows, x:x + bitmap.width].flat = bitmap.buffer
 
-        Z = np.flip(Z, axis=0).copy()
-        self.texture_height, self.texture_width = Z.shape
+        data = np.flip(data, axis=0).copy()
+        self.texture_height, self.texture_width = data.shape
         
         ctx = mglw.ctx()
-        self.texture = ctx.texture((self.texture_width, self.texture_height), 1, data=Z)
+        self.texture = ctx.texture((self.texture_width, self.texture_height), 1, data=data)
         # self.texture.write(Z)
         self.texture.build_mipmaps()
 
 
-class FontBook(Mapping):
+class FontBook(MappingABC):
     def __init__(self, res_dir: str='resources/fonts'):
         self.fonts = {}
         self.dir = res_dir
@@ -207,10 +205,10 @@ class FontBook(Mapping):
         return other in self.fonts
 
     def __iter__(self):
-        return iter(programs)
+        return iter(self.fonts)
 
     def __len__(self):
-        return len(programs)
+        return len(self.fonts)
 
     def __getitem__(self, name_and_size: Tuple[str, int]) -> Font:
         assert (
@@ -242,7 +240,7 @@ class TextRenderer(Renderable):
 
     @property
     def text(self) -> str:
-        return self._text;
+        return self._text
 
     @text.setter
     def text(self, new_text: str) -> None:
@@ -286,8 +284,6 @@ class TextRenderer(Renderable):
         ]))
 
     def create_vaos_and_buffer_data(self):
-        ctx = mglw.ctx()
-
         while len(self.text) < len(self.vaos):
             self.backup_vaos.append(self.vaos.pop())
 
@@ -355,7 +351,7 @@ class TextRenderer(Renderable):
 
         return offsets, texture_coords
 
-    def render(self, proj: Matrix44):
+    def render(self, proj: Matrix44) -> None:
         self.program.write_uniform('projection', proj)
         self.program.set_uniform_value('text_color', self.color)
 
@@ -363,22 +359,6 @@ class TextRenderer(Renderable):
 
         for vao in self.vaos:
             vao.render(self.program.program)
-
-
-class TexturedQuad(Renderable):
-    def __init__(self, texture: moderngl.Texture):
-        w, h = get_viewport_dimensions()
-        self.quad = geom.quad_2d(size=(w, h), pos=(w / 2, h / 2))
-        self.texture = texture
-        self.program = state.shader_program_repo['font']
-
-    def render(self, proj: Matrix44):
-        self.program.write_uniform('projection', proj)
-        self.program.set_uniform_value('text_color', (0.5, 0.5, 0.5))
-
-        self.texture.use(location=0)
-
-        self.quad.render(self.program.program)
 
 
 class InstancedObject(Renderable):
@@ -390,12 +370,12 @@ class InstancedObject(Renderable):
             color: Optional[Color],
             transforms: List[Transform3D],
             texture: Optional[moderngl.Texture]=None,
-            vao_generator_args: Sequence[any]=[],
-            vao_generator_kwargs: Mapping[str, any]={}):
+            vao_generator_args: Optional[Sequence[any]]=None,
+            vao_generator_kwargs: Optional[Mapping[str, any]]=None):
         self.program = state.shader_program_repo[program_name]
         self.vao_generator = vao_generator
-        self.vao_generator_args = vao_generator_args
-        self.vao_generator_kwargs = vao_generator_kwargs
+        self.vao_generator_args = [] if vao_generator_args is None else vao_generator_args
+        self.vao_generator_kwargs = {} if vao_generator_kwargs is None else vao_generator_kwargs
         self.instance_count = instance_count
 
         self.color = None
@@ -408,7 +388,11 @@ class InstancedObject(Renderable):
 
         self.transforms = transforms
 
-        self.vao = self.instance_models = self.instance_mvps = self.instance_normal_mats = None
+        self.vao = None
+        self.instance_models = None
+        self.instance_mvps = None
+        self.instance_normal_mats = None
+        self.instance_texture_coords = None
         self.create_vao_and_buffers()
 
     def create_vao_and_buffers(self) -> None:
@@ -544,7 +528,7 @@ class SnakeRenderer(Renderable):
 
         self.instanced_cube = InstancedObject(
             len(transforms), geom.cube, 'lighting', theme.snake, transforms,
-            vao_generator_kwargs={'size':(2.0, 2.0, 2.0)}
+            vao_generator_kwargs={'size': (2.0, 2.0, 2.0)}
         )
 
         self.instanced_sphere = InstancedObject(
@@ -638,7 +622,7 @@ class WallRenderer(Renderable):
 
         self.instanced_cube = InstancedObject(
             len(self.walls), geom.cube, 'lighting', theme.walls, transforms,
-            vao_generator_kwargs={'size':(2.0, 2.0, 2.0)}
+            vao_generator_kwargs={'size': (2.0, 2.0, 2.0)}
         )
 
         self.first_update = True
@@ -651,7 +635,9 @@ class WallRenderer(Renderable):
             if wall.pos != self.wall_locations[i]:
                 needs_update = True
                 self.wall_locations[i] = wall.pos
-                self.instanced_cube.transforms[i].translation = Scene.grid_position(wall.x, wall.y, board_width, board_height)
+                self.instanced_cube.transforms[i].translation = Scene.grid_position(
+                    wall.x, wall.y, board_width, board_height
+                )
 
         if needs_update:
             self.instanced_cube.update(view_proj)
@@ -700,8 +686,6 @@ class FoodRenderer(Renderable):
 
 class BoardRenderer(Renderable):
     def __init__(self, board_width: int, board_height: int, theme: Theme):
-        ctx = mglw.ctx()
-
         horizontal_scale = Vector3([board_width * 2, 0.1, 1], dtype='f4')
         vertical_scale = Vector3([0.1, board_height * 2, 1], dtype='f4')
         transforms = [
@@ -751,14 +735,11 @@ class BoardRenderer(Renderable):
 
 class ShadowMap(Renderable):
     def __init__(self, width: int=4096, height: int=4096):
-        # Offscreen buffer
         self.width, self.height = width, height
         self.shadow_map = mglw.ctx().depth_texture((self.width, self.height))
         self.shadow_map.compare_func = ''
         self.shadow_map.repeat_x = False
         self.shadow_map.repeat_y = False
-
-        # Less ugly by default with linear. May need to be NEAREST for some techniques
         self.shadow_map.filter = moderngl.LINEAR, moderngl.LINEAR
 
         self.frame_buffer = mglw.ctx().framebuffer(depth_attachment=self.shadow_map)
@@ -773,7 +754,7 @@ class ShadowMap(Renderable):
             renderable.render(override_program=prog)
 
 
-class HDRBloomRenderer(Renderable): # TODO: Multisampling
+class HDRBloomRenderer(Renderable):  # TODO: Multisampling
     def __init__(self):
         viewport_dimensions = get_viewport_dimensions()
         ctx = mglw.ctx()
@@ -781,7 +762,7 @@ class HDRBloomRenderer(Renderable): # TODO: Multisampling
         self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
 
-        ping_pong_dimensions = viewport_dimensions[0] // 4, viewport_dimensions[1] // 4
+        ping_pong_dimensions = viewport_dimensions[0] // 6, viewport_dimensions[1] // 6
 
         self.ping_pong_textures = [
             ctx.texture(ping_pong_dimensions, 4, dtype='f2'),
@@ -817,7 +798,7 @@ class HDRBloomRenderer(Renderable): # TODO: Multisampling
     def blur(self) -> bool:
         horizontal = True
         first_iteration = True
-        amount = 14
+        amount = 12
         for i in range(amount):
             self.ping_pong_framebuffers[horizontal].use()
 
@@ -860,7 +841,6 @@ class Scene(Renderable):
 
         max_dim = max(self.board_width / aspect_ratio, self.board_height)
         
-        # self.camera_pos = 0.0, max_dim * 2.5, max_dim * 3.5
         self.camera_pos = 0.0, max_dim * 1.75, max_dim * 2.9
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
 
@@ -875,8 +855,6 @@ class Scene(Renderable):
         self.shadow_map = ShadowMap()
 
         light_pos = [max_dim * 0.9, -max_dim * .5, max_dim * 1.3]
-        # light_pos = [10, 25, 50]
-        # light_pos = self.camera_pos
         self.light = Light(
             Vector3(light_pos, dtype='f4'), Color(255, 255, 255),
             aspect_ratio=self.shadow_map.width / self.shadow_map.height
@@ -911,12 +889,11 @@ class Scene(Renderable):
                 (self.light.color_buffer, 2),
                 (self.camera_pos_buffer, 3),
                 (self.light.view_proj_buffer, 4)
-        ])
+            ]
+        )
 
         # Create HDR Bloom renderer
         self.hdr_bloom_renderer = HDRBloomRenderer()
-
-        # self.debug_quad = geom.quad_2d()
 
         self.shadow_map_pass_renderables = [
             self.board_renderer, self.snake_renderer, self.wall_renderer, self.food_renderer
@@ -942,8 +919,5 @@ class Scene(Renderable):
             # Render shadow map
             self.shadow_map.render(self.shadow_map_pass_renderables)
 
-            # Render to screen
-            mglw.ctx().screen.use()
-            
             self.shadow_map.shadow_map.use(location=0)
             self.hdr_bloom_renderer.render(self.hdr_bloom_pass_renderables)

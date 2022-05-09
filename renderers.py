@@ -28,7 +28,6 @@ import state
 
 from main import exit_game, handle_input
 from opengl_renderer import (
-    Font,
     FontBook,
     get_viewport_dimensions,
     InstancedObject,
@@ -41,7 +40,11 @@ from snake import Direction, Game, Node, Snake
 from snake_args import add_args
 from themes import Theme, themes
 from utils import (
-    game_over_text, get_high_scores, parse_key, SetInterval, update_high_scores
+    game_over_text,
+    get_high_scores,
+    parse_key,
+    SetInterval,
+    update_high_scores
 )
 
 if platform.system() != 'Windows':
@@ -63,6 +66,9 @@ class HashableRect(pg.Rect):
 
 
 class Renderer(ABC):
+    def __init__(self):
+        self.fps = 0
+
     @abstractmethod
     def initialize(self, game: Game, **kw_args: Any) -> None:
         pass
@@ -85,6 +91,19 @@ class Renderer(ABC):
 
 
 class PGRenderer(Renderer):
+    def __init__(self):
+        super().__init__()
+        self.eating_sound = None
+        self.draw_game_over = None
+        self.theme = None
+        self.fonts = None
+        self.font_type = None
+        self.clock = None
+        self.screen = None
+        self.height = None
+        self.width = None
+        self.scale_factor = None
+
     def initialize(self, game: Game, **kw_args: Any) -> None:
         self.scale_factor = kw_args['scale_factor']
         if game:
@@ -132,7 +151,7 @@ class PGRenderer(Renderer):
         pg.display.flip()
 
     def run(self, game: Game) -> None:
-        self.fps = elapsed_time = frames = 0
+        elapsed_time = frames = 0
         
         while state.run:
             for event in pg.event.get():
@@ -169,8 +188,13 @@ class PGRenderer(Renderer):
         return self.fonts[font_size]
 
     def draw_text(
-            self, text: str, pos: Tuple[int, int], which_point: str, font_size: int,
-            color: Tuple[int, int, int], center_lines_vertically: bool=True,
+            self,
+            text: str,
+            pos: Tuple[int, int],
+            which_point: str,
+            font_size: int,
+            color: Tuple[int, int, int],
+            center_lines_vertically: bool=True,
             line_spacing: int=6) -> List[pg.Rect]:
         font = self.get_font(font_size)
 
@@ -213,8 +237,6 @@ class PGRenderer(Renderer):
     def draw_high_scores(self, top_n=5) -> pg.Rect:
         scores, lengths = get_high_scores(top_n=top_n)
 
-        dirty_rects = []
-
         font_size = 36
         line_spacing = 6
         color = self.theme.text
@@ -255,7 +277,7 @@ class PGRenderer(Renderer):
         )
 
     def draw_level_name(self) -> pg.Rect:
-        rect =  self.draw_text(
+        rect = self.draw_text(
             f'Level: {state.level_name}', (self.width / 2, self.height - 2), 'midbottom', 22,
             self.theme.text
         )[0]
@@ -277,6 +299,16 @@ class PGRenderer(Renderer):
 
 class PGRenderer2(PGRenderer):
     def __init__(self):
+        super().__init__()
+        self.previous_wall_rects = None
+        self.grid_lines = None
+        self.drew_level_name = None
+        self.food_was_in_wall = None
+        self.wall_surface = None
+        self.board_surface = None
+        self.last_length_rect = None
+        self.last_score_rect = None
+        self.last_fps_rect = None
         self.past_head_rect = self.past_food_rect = pg.Rect(0, 0, 0, 0)
         self.past_snake_rects = set()
         self.first_render = True
@@ -293,7 +325,7 @@ class PGRenderer2(PGRenderer):
         self.food_was_in_wall = False
         self.drew_level_name = False
 
-        self.grid_lines = self.generate_gridlines(game) if kw_args['show_grid'] else None
+        self.grid_lines = self.generate_gridlines() if kw_args['show_grid'] else None
 
         self.previous_wall_rects = set()
 
@@ -401,7 +433,7 @@ class PGRenderer2(PGRenderer):
         self.screen.blit(self.wall_surface, fill_area, area=fill_area)
         return fill_area
 
-    def generate_gridlines(self, game: Game) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]: # FIXME game parameter not needed        
+    def generate_gridlines(self) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
         horz_lns = [
             (
                 (0, offset), (self.width, offset)
@@ -426,22 +458,22 @@ class PGRenderer2(PGRenderer):
         side_offset = self.scale_factor / 5
         front_offset = self.scale_factor / 2
         eye_radius = max(self.scale_factor // 12, 1)
-        if direction == Direction.up():
+        if direction.name == 'up':
             x1 = head_rect.x + side_offset
             y1 = head_rect.y + front_offset
             x2 = head_rect.x + head_rect.width - side_offset
             y2 = head_rect.y + front_offset
-        elif direction == Direction.down():
+        elif direction.name == 'down':
             x1 = head_rect.x + side_offset
             y1 = head_rect.y + head_rect.height - front_offset
             x2 = head_rect.x + head_rect.width - side_offset
             y2 = head_rect.y + head_rect.height - front_offset
-        elif direction == Direction.right():
+        elif direction.name == 'right':
             x1 = head_rect.x + head_rect.width - front_offset
             y1 = head_rect.y + side_offset
             x2 = head_rect.x + head_rect.width - front_offset
             y2 = head_rect.y + head_rect.height - side_offset
-        elif direction == Direction.left():
+        else:
             x1 = head_rect.x + front_offset
             y1 = head_rect.y + side_offset
             x2 = head_rect.x + front_offset
@@ -457,7 +489,6 @@ class PGRenderer2(PGRenderer):
         self.past_head_rect = head_rect
 
         return head_rect
-
 
     def draw_food(self, game: Game) -> Optional[pg.Rect]:
         food = game.food
@@ -497,7 +528,7 @@ class PGRenderer2(PGRenderer):
         # Either draw the score or the game over screen
         if game.game_over and not self.drew_game_over:
             # We want to skip one rendering cycle before drawing game over and the high
-            # scores because saving/reading the high scores takes a little bit
+            # scores because saving/reading the high scores takes a bit
             if self.draw_game_over:
                 dirty_rects = self.game_over(game)
                 # Clear score text if game is over
@@ -553,8 +584,8 @@ class PGRenderer2(PGRenderer):
         sf = self.scale_factor
         wh = sf + 2 * buffer
         return HashableRect(
-            sf * (node.x) - buffer,
-            sf * (node.y) - buffer,
+            sf * node.x - buffer,
+            sf * node.y - buffer,
             wh,
             wh
         )
@@ -593,6 +624,7 @@ class RelativeDirection(Enum):
     BELOW = auto()
     LEFT_OF = auto()
     RIGHT_OF = auto()
+
 
 connecting_polygon_params = {
     (RelativeDirection.LEFT_OF, RelativeDirection.ABOVE): {
@@ -685,6 +717,7 @@ connecting_polygon_params = {
     }
 }
 
+
 class PGRenderer3(PGRenderer2):
     def render(self, game: Game) -> None:
         dirty_rects = []
@@ -724,8 +757,13 @@ class PGRenderer3(PGRenderer2):
         return RelativeDirection.RIGHT_OF
 
     def get_bend_poly(
-            self, start_angle: float, end_angle: float, start_scale: int, end_scale: int,
-            center_point: Tuple[int, int], connecting_point: Tuple[int, int],
+            self,
+            start_angle: float,
+            end_angle: float,
+            start_scale: int,
+            end_scale: int,
+            center_point: Tuple[int, int],
+            connecting_point: Tuple[int, int],
             points: int=20 ) -> List[Tuple[int, int]]:
         r = np.linspace(start_scale, end_scale, points)
         t = np.linspace(start_angle, end_angle, points)
@@ -735,16 +773,21 @@ class PGRenderer3(PGRenderer2):
         return [*zip(x.tolist(), y.tolist()), connecting_point, center_point]
 
     def get_interp_poly(
-            self, start_pt: Tuple[int, int], inter_pt: Tuple[int, int],
-            end_pt: Tuple[int, int], center_point: Tuple[int, int],
-            connecting_point: Tuple[int, int], points=20) -> List[Tuple[int, int]]:
+            self,
+            start_pt: Tuple[int, int],
+            inter_pt: Tuple[int, int],
+            end_pt: Tuple[int, int],
+            center_point: Tuple[int, int],
+            connecting_point: Tuple[int, int],
+            points=20) -> List[Tuple[int, int]]:
         x, y = zip(start_pt, inter_pt, end_pt)
         p = np.polynomial.Polynomial.fit(x, y, deg=2)
 
-        return [*zip(*p.linspace(20)), center_point, connecting_point]
+        return [*zip(*p.linspace(points)), center_point, connecting_point]
 
     def fix_disjoint_polygons(
-            self, current_polygon: List[Tuple[int, int]],
+            self,
+            current_polygon: List[Tuple[int, int]],
             previous_polygon: List[Tuple[int, int]],
             current_relative_direction: RelativeDirection,
             previous_relative_direction: RelativeDirection) -> List[Tuple[int, int]]:
@@ -827,31 +870,31 @@ class PGRenderer3(PGRenderer2):
 
             if relative_direction == RelativeDirection.ABOVE:
                 polygon = [
-                    (get_decreased(node.x + 1, i + 1, -1), get_unchanged(node.y)), # top right corner
-                    (get_decreased(node.x + 1, i, -1), get_unchanged(node.y + 1)), # bottom right corner
-                    (get_decreased(node.x, i, 1), get_unchanged(node.y + 1)),      # bottom left corner
-                    (get_decreased(node.x, i + 1, 1), get_unchanged(node.y))       # top left corner
+                    (get_decreased(node.x + 1, i + 1, -1), get_unchanged(node.y)),  # top right corner
+                    (get_decreased(node.x + 1, i, -1), get_unchanged(node.y + 1)),  # bottom right corner
+                    (get_decreased(node.x, i, 1), get_unchanged(node.y + 1)),       # bottom left corner
+                    (get_decreased(node.x, i + 1, 1), get_unchanged(node.y))        # top left corner
                 ]
             elif relative_direction == RelativeDirection.BELOW:
                 polygon = [
-                    (get_decreased(node.x + 1, i, -1), get_unchanged(node.y)),         # top right corner
-                    (get_decreased(node.x + 1, i + 1, -1), get_unchanged(node.y + 1)), # bottom right corner
-                    (get_decreased(node.x, i + 1, 1), get_unchanged(node.y + 1)),      # bottom left corner
-                    (get_decreased(node.x, i, 1), get_unchanged(node.y))               # top left corner
+                    (get_decreased(node.x + 1, i, -1), get_unchanged(node.y)),          # top right corner
+                    (get_decreased(node.x + 1, i + 1, -1), get_unchanged(node.y + 1)),  # bottom right corner
+                    (get_decreased(node.x, i + 1, 1), get_unchanged(node.y + 1)),       # bottom left corner
+                    (get_decreased(node.x, i, 1), get_unchanged(node.y))                # top left corner
                 ]
             elif relative_direction == RelativeDirection.LEFT_OF:
                 polygon = [
-                    (get_unchanged(node.x + 1), get_decreased(node.y, i, 1)),      # top right corner
-                    (get_unchanged(node.x + 1), get_decreased(node.y + 1, i, -1)), # bottom right corner
-                    (get_unchanged(node.x), get_decreased(node.y + 1, i + 1, -1)), # bottom left corner
-                    (get_unchanged(node.x), get_decreased(node.y, i + 1, 1))       # top left corner
+                    (get_unchanged(node.x + 1), get_decreased(node.y, i, 1)),       # top right corner
+                    (get_unchanged(node.x + 1), get_decreased(node.y + 1, i, -1)),  # bottom right corner
+                    (get_unchanged(node.x), get_decreased(node.y + 1, i + 1, -1)),  # bottom left corner
+                    (get_unchanged(node.x), get_decreased(node.y, i + 1, 1))        # top left corner
                 ]
             else:
                 polygon = [
-                    (get_unchanged(node.x + 1), get_decreased(node.y, i + 1, 1)),      # top right corner
-                    (get_unchanged(node.x + 1), get_decreased(node.y + 1, i + 1, -1)), # bottom right corner
-                    (get_unchanged(node.x), get_decreased(node.y + 1, i, -1)),         # bottom left corner
-                    (get_unchanged(node.x), get_decreased(node.y, i, 1))               # top left corner
+                    (get_unchanged(node.x + 1), get_decreased(node.y, i + 1, 1)),       # top right corner
+                    (get_unchanged(node.x + 1), get_decreased(node.y + 1, i + 1, -1)),  # bottom right corner
+                    (get_unchanged(node.x), get_decreased(node.y + 1, i, -1)),          # bottom left corner
+                    (get_unchanged(node.x), get_decreased(node.y, i, 1))                # top left corner
                 ]
 
             if i >= 1:
@@ -907,7 +950,8 @@ class PGRenderer3(PGRenderer2):
 
 class CLRenderer(Renderer):
     def __init__(self, *vargs):
-        pass
+        super().__init__()
+        self.loop = None
 
     @staticmethod
     def clear_terminal():
@@ -916,7 +960,7 @@ class CLRenderer(Renderer):
         else:  # Linux and Mac
             print('\033c', end='')
 
-    def handle_exit(self, *args) -> None:
+    def handle_exit(self, *args: Any) -> None:
         if not state.run:
             self.loop.cancel()
 
@@ -937,8 +981,34 @@ class CLRenderer(Renderer):
         print(game_over_text(game, update_high_scores(game)))
         self.loop.cancel()
 
+
 if platform.system() != 'Windows':
     class CursesRenderer(Renderer):
+        def __init__(self):
+            super().__init__()
+            self.color_pairs = None
+            self.eye_color = None
+            self.text_color = None
+            self.food_color = None
+            self.wall_color = None
+            self.snake_color = None
+            self.background_color = None
+            self.debug_text = []
+            self.height = None
+            self.width = None
+            self.draw_game_over = False
+            self.drew_game_over = False
+            self.previous_food = None
+            self.previous_wall_nodes = set()
+            self.previous_snake_nodes = set()
+            self.elapsed_time = None
+            self.frames = None
+            self.prev_time = None
+            self.previous_calc_time = None
+            self.use_colors = None
+            self.window = None
+            self.stdscr = None
+
         def initialize(self, game: Game, **kw_args) -> None:
             self.stdscr = curses.initscr()
             self.window = curses.newwin(game.board_height, game.board_width, 0, 0)
@@ -954,7 +1024,7 @@ if platform.system() != 'Windows':
                 self.window.bkgd(' ', curses.color_pair(4))
 
             self.previous_calc_time = self.prev_time = time.perf_counter()
-            self.elapsed_time = self.frames = self.fps = 0
+            self.elapsed_time = self.frames = 0
             self.previous_snake_nodes = set()
             self.previous_wall_nodes = set()
             self.previous_food = None
@@ -966,7 +1036,6 @@ if platform.system() != 'Windows':
 
         def render(self, game: Game) -> None: # TODO make this work when colors don't work
             width = self.width
-            height = self.height
 
             wall_nodes = set(game.level.wall_nodes)
             new_nodes = wall_nodes - self.previous_wall_nodes
@@ -1008,7 +1077,8 @@ if platform.system() != 'Windows':
                 fps_str = f'FPS: {self.fps:.0f}'
                 n_top_strings += 1
 
-            # TODO draw the top wall only for the first render and then fill any missing characters when drawing the top strings
+            # TODO: draw the top wall only for the first render and then fill any missing
+            # characters when drawing the top strings
             self.draw_str(' ' * width, 0, 0, self.text_color, game)
 
             if n_top_strings == 3:
@@ -1026,7 +1096,6 @@ if platform.system() != 'Windows':
             elif n_top_strings == 1:
                 start_x = width // 2 - len(length_str)
                 self.draw_str(length_str, start_x, 0, self.text_color, game)
-
 
             if game.game_over and not self.drew_game_over:
                 if self.draw_game_over:
@@ -1058,7 +1127,6 @@ if platform.system() != 'Windows':
             game_over_str = game_over_text(game, update_high_scores(game))
             lines = game_over_str.split('\n')
             start_y = self.height // 5
-            snake_points = {(node.x, node.y) for node in game.snake}
             for line, y in zip(lines, range(start_y, start_y + len(lines))):
                 start_x = (self.width + 2 - len(line)) // 2
                 self.draw_str(line, start_x, y, self.text_color, game)
@@ -1075,7 +1143,13 @@ if platform.system() != 'Windows':
                 x = self.width // 2 - len(score) - 1
                 self.draw_str(f'{score} | {length}', x, start_y + i, self.text_color, game)
 
-        def draw_str(self, s: str, start_x: int, y: int, fg_color: int, game: Game, options: int=0) -> None:
+        def draw_str(
+                self, s: str,
+                start_x: int,
+                y: int,
+                fg_color: int,
+                game: Game,
+                options: int=0) -> None:
             snake_points = {(node.x, node.y) for node in game.snake}
             wall_points = {(node.x, node.y) for node in game.level.wall_nodes}
 
@@ -1101,7 +1175,6 @@ if platform.system() != 'Windows':
                     self.window.addstr(y, x, s[i], curses.color_pair(color_pair) | options)
                 else:
                     self.window.addstr(y, x, s[i], curses.color_pair(color_pair) | options)
-
 
         def init_theme(self, theme: Theme) -> bool:
             to_curses_color = lambda r, g, b: (min(999, r * 4), min(999, g * 4), min(999, b * 4))
@@ -1156,7 +1229,7 @@ if platform.system() != 'Windows':
                 handle_input(parse_key(key, 'curses'), False, ignore_released=True)
                 key = self.window.getch()
 
-        def handle_exit(self, *args) -> None:
+        def handle_exit(self, *args: Any) -> None:
             curses.nocbreak()
             self.stdscr.keypad(False)
             curses.echo()
@@ -1187,7 +1260,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     title = 'Snake'
     gl_version = (3, 3)
     window_size = (1920, 1080)
-    aspect_ratio = 16 / 9
+    aspect_ratio = window_size[0] / window_size[1]
     resizable = True
     samples = 8
 
@@ -1195,7 +1268,28 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        Renderer.__init__(self)
         self.wnd.config = self
+        self.high_score_vert_line = None
+        self.high_score_horiz_line = None
+        self.font = None
+        self.orthogonal_proj = None
+        self.viewport_height = None
+        self.viewport_width = None
+        self.font_book = None
+        self.scene = None
+        self.background_color = None
+        self.theme = None
+        self.game = None
+        self.frames = None
+        self.score_renderer = None
+        self.level_renderer = None
+        self.fps_renderer = None
+        self.length_renderer = None
+        self.game_over_renderer = None
+        self.high_scores_renderer = None
+        self.elapsed_time = self.frames = 0
+        self.draw_game_over = False
 
         self.initialize(state.game, theme=self.argv.theme)
 
@@ -1228,21 +1322,6 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
         self.font = self.font_book['SFNSMono', 64]
 
-        self.score_renderer = None
-        self.level_renderer = None
-        self.fps_renderer = None
-        self.length_renderer = None
-        self.game_over_renderer = None
-        self.high_scores_renderer = None
-
-        self.elapsed_time = self.frames = self.fps = 0
-
-        # tex = self.load_texture_2d('images/test.png')
-        
-        # from opengl_renderer import TexturedQuad
-        # self.quad = TexturedQuad(tex)
-        # self.quad = TexturedQuad(self.font.texture)
-
     def key_event(self, key, action, modifiers):
         if action == self.wnd.keys.ACTION_PRESS:
             if key == self.wnd.keys.UP:
@@ -1257,7 +1336,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             if key == self.wnd.keys.ESCAPE:
                 handle_input('escape', True)
 
-    def render(self, time, frame_time):
+    def render(self, run_time: float, frame_time: float):
         self.elapsed_time += frame_time
         self.frames += 1
         if self.elapsed_time >= 1:
@@ -1265,7 +1344,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             self.frames = self.elapsed_time = 0
 
         self.ctx.clear(*self.background_color)
-        self.scene.render(time, frame_time)
+        self.scene.render(run_time, frame_time)
         self.ctx.enable(moderngl.BLEND)
         self.draw_all_text()
 
@@ -1315,13 +1394,15 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.level_renderer.render(self.orthogonal_proj)
 
     def draw_game_over_text(self):
-        if not self.game_over_renderer:
-            text = game_over_text(self.game, update_high_scores(self.game))
-            self.game_over_renderer = TextRenderer(
-                self.font, text, self.theme.text, self.viewport_width / 2,
-                self.viewport_height * 0.7, which_point='midbottom'
-            )
-        self.game_over_renderer.render(self.orthogonal_proj)
+        # We want to skip one rendering cycle before drawing game over and the high
+        # scores because saving/reading the high scores takes a bit
+            if not self.game_over_renderer:
+                text = game_over_text(self.game, update_high_scores(self.game))
+                self.game_over_renderer = TextRenderer(
+                    self.font, text, self.theme.text, self.viewport_width / 2,
+                    self.viewport_height * 0.7, which_point='midbottom'
+                )
+            self.game_over_renderer.render(self.orthogonal_proj)
 
     def draw_high_scores(self, top_n=5) -> None:
         if not self.high_scores_renderer:
@@ -1363,14 +1444,14 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.high_score_vert_line.render(write_uniforms={'Mvp': self.orthogonal_proj})
         self.high_scores_renderer.render(self.orthogonal_proj)
 
-
     def draw_all_text(self):
-        # self.quad.render()
         self.draw_fps()
         self.draw_length(len(self.game.snake))
         if self.game.game_over:
-            self.draw_game_over_text()
-            self.draw_high_scores()
+            if self.draw_game_over:
+                self.draw_game_over_text()
+                self.draw_high_scores()
+            self.draw_game_over = True
         else:
             self.draw_score(self.game.score)
         self.draw_level_name()

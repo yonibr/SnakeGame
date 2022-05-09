@@ -4,7 +4,7 @@
 import itertools
 import numpy as np
 
-from collections import Counter, defaultdict, deque as queue
+from collections import defaultdict, deque as queue
 from math import copysign
 from typing import (
     Callable,
@@ -104,7 +104,7 @@ class Node(object):
         return self.x, self.y
 
     def to_tuple(self) -> Tuple[int, int, str]:
-        return (self.x, self.y, self.marker)
+        return self.x, self.y, self.marker
 
     def move(self, direction: Direction) -> None:
         self.x += direction.offset_x
@@ -145,7 +145,7 @@ class Snake(NodeCollection):
     def __len__(self) -> int:
         return super().__len__() + len(self.node_queue)
 
-    # TO DO: maybe add option for food to not be added until the end of the tail reaches where the food was eaten
+    # TODO: maybe add option for food to not be added until the end of the tail reaches where the food was eaten
     def move(self) -> None:
         last_pos = self.head.x, self.head.y
 
@@ -189,7 +189,7 @@ class Level(object):
         self.mask = self.compute_mask()
 
     def __len__(self) -> int:
-        return np.sum(self.mask)
+        return int(np.sum(self.mask))
 
     def tick(self) -> None:
         self.tick_counter += 1
@@ -226,10 +226,6 @@ class Level(object):
         cell_classes = [[None] * len(cells[0]) for _ in cells]
         to_check = set((x, y) for x in range(len(cells[0])) for y in range(len(cells)) if not cells[y][x])
         is_valid = lambda x, y: 0 <= x < len(cells[0]) and 0 <= y < len(cells) and (adjx, adjy) in to_check
-
-        # Direction vectors
-        d_row = [-1, 0, 1, 0]
-        d_col = [0, 1, 0, -1]
 
         class_idx = 0
         class_counts = defaultdict(int)
@@ -294,7 +290,7 @@ class Level(object):
                 to_check4.append((x, y))
 
         # First we want to check cells with accessibility of 2, then 3, then 4. This
-        # order is because it is more likely that a blockage will occurr when the
+        # order is because it is more likely that a blockage will occur when the
         # accessibility is 2 vs 3 and 3 vs 4, and we want to check as few cells as possible.
         if fully_accessible:
             for x, y in itertools.chain(to_check2, to_check3, to_check4):
@@ -327,6 +323,7 @@ class Level(object):
     @classmethod
     def MovingVertWall(cls, board_width: int, board_height: int) -> 'Level':
         max_center_offset = board_width // 4
+
         def tick_func(walls, tick_counter):
             wall = walls['moving_wall']
             wall_x = wall.nodes[0].x
@@ -410,9 +407,8 @@ class Level(object):
 
     @classmethod
     def Training(cls, board_width: int, board_height: int) -> 'Level':
-        # level_type = rng.choice(['Basic', 'Viewfinder', 'Random'], p=[0.85, 0.15, 0.025])
+        level_type = rng.choice(['Basic', 'Viewfinder', 'Random'], p=[0.85, 0.15, 0.025])
         # level_type = rng.choice(['Basic', 'Viewfinder'], p=[2 / 3, 1 / 3])
-        level_type = 'Basic'
         kw_params = dict()
         if level_type == 'Random':
             wd, hd, vd = rng.integers([5, 5, 9], [9, 9, 15], size=3)
@@ -479,6 +475,7 @@ class Game(object):
 
         counter = 0
         self.snake = None
+        self.level = None
         while not self.snake and counter < 1000:
             self.create_level(level, board_width, board_height)
             self.place_snake(start_x, start_y, start_length)
@@ -487,6 +484,7 @@ class Game(object):
             print('Failed to place snake. Please make sure the starting parameters are valid.')
             exit()
 
+        self.food = None
         self.place_food()
         self.game_over = False
         self.won = False
@@ -563,7 +561,7 @@ class Game(object):
 
             if len(self.snake) < len(self) - len(self.level):
                 self.place_food()
-            else: # The snake has completely filled up the board
+            else:  # The snake has completely filled up the board
                 self.game_over = True
                 self.won = True
 

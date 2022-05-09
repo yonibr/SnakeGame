@@ -24,9 +24,13 @@ high_score_params = ['start_length', 'board_width', 'board_height', 'speed', 'le
 # Modified from https://stackoverflow.com/a/48709380/2892775
 class SetInterval(object):
     def __init__(
-        self, interval: float, delay: float, action: Callable[..., Any], callback: Optional[Callable[[Any], Any]],
-        *params, **kwparams
-            ):
+            self,
+            interval: float,
+            delay: float,
+            action: Callable[..., Any],
+            callback: Optional[Callable[[Any], Any]],
+            *params: Any,
+            **kwparams: Any):
         self.interval = interval
         self.delay = delay
         self.action = action
@@ -39,9 +43,9 @@ class SetInterval(object):
 
     def __set_interval(self) -> None:
         time.sleep(self.delay)
-        nextTime = time.time() + self.interval
-        while not self.stopEvent.wait(nextTime - time.time()):
-            nextTime += self.interval
+        next_time = time.time() + self.interval
+        while not self.stopEvent.wait(next_time - time.time()):
+            next_time += self.interval
             ret_val = self.action(*self.params, **self.kwparams)
             if self.callback:
                 self.callback(ret_val)
@@ -89,12 +93,14 @@ def game_over_text(game: Game, got_high_score: bool) -> str:
         f'Score: {game.score}'
     ]))
 
+
 def get_same_param_score_df(score_df: pd.DataFrame) -> pd.DataFrame:
     indices = reduce(
         operator.and_,
         (score_df.get(param) == getattr(state, param) for param in high_score_params)
     )
     return score_df[indices].reset_index(drop=True)
+
 
 def update_high_scores(game: Game, check_top_n: int=5) -> bool:
     score = game.score

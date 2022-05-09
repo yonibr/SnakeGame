@@ -39,6 +39,7 @@ game_param_names = [
     'start_x', 'start_y', 'start_length', 'board_width', 'board_height', 'speed', 'level'
 ]
 
+
 def add_args(parser: argparse.ArgumentParser) -> None:
     from renderers import renderers
     from snake import levels

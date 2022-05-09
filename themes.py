@@ -5,10 +5,15 @@ from typing import Tuple
 Color = namedtuple('Color', ['r', 'g', 'b'])
 
 class Theme(object):
-    """docstring for Theme"""
     def __init__(
-            self, snake: Color, eyes: Color, background: Color, walls: Color,
-            text: Color, grid: Color, food: Color):
+            self,
+            snake: Color,
+            eyes: Color,
+            background: Color,
+            walls: Color,
+            text: Color,
+            grid: Color,
+            food: Color):
         self.snake = snake
         self.eyes = eyes
         self.background = background
@@ -16,7 +21,6 @@ class Theme(object):
         self.text = text
         self.grid = grid
         self.food = food
-
 
 
 themes = {
