@@ -616,7 +616,7 @@ class WallRenderer(Renderable):
                 translation=Scene.grid_position(
                     x, y, game.board_width, game.board_height
                 ),
-                scale=Vector3([1.0, 1.0, 1.65], dtype='f4')
+                scale=Vector3([1.0, 1.0, 1.5], dtype='f4')
             ) for x, y in self.wall_locations
         ]
 
@@ -841,7 +841,7 @@ class Scene(Renderable):
 
         max_dim = max(self.board_width / aspect_ratio, self.board_height)
         
-        self.camera_pos = 0.0, max_dim * 1.75, max_dim * 2.9
+        self.camera_pos = 0.0, max_dim * 2.1, max_dim * 2.25
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
 
         self.proj = Matrix44.perspective_projection(
@@ -854,7 +854,7 @@ class Scene(Renderable):
 
         self.shadow_map = ShadowMap()
 
-        light_pos = [max_dim * 0.9, -max_dim * .5, max_dim * 1.3]
+        light_pos = [max_dim * 0.9, -max_dim * .65, max_dim * 1.1]
         self.light = Light(
             Vector3(light_pos, dtype='f4'), Color(255, 255, 255), radius=max_dim / 4,
             aspect_ratio=self.shadow_map.width / self.shadow_map.height
