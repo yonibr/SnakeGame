@@ -4,9 +4,9 @@
 #    - When adding instances, grow buffers rather than just deleting and recreating;
 #      see moderngl example growing_buffers.py
 #    - destroy resources
-#    - Antialiasing
 #    - Sounds
 
+import math
 import moderngl
 import moderngl_window as mglw
 import numpy as np
@@ -465,15 +465,16 @@ class InstancedObject(Renderable):
         self.vao.render(program.program, instances=self.instance_count)
 
 
-class Light(Renderable):  # TODO figure out perspective projection
+class Light(Renderable):
     def __init__(
             self,
             pos: Vector3,
             color: Color,
+            board_width: int,
+            board_height: int,
             radius: float=5.0,
             brightness=5.0,
-            rendered_color: Color=Color(249, 215, 28),
-            aspect_ratio: float=1.0):
+            rendered_color: Color=Color(249, 215, 28)):
         ctx = mglw.ctx()
         self.pos = pos
         self.color = color.r / 255, color.g / 255, color.b / 255
@@ -481,15 +482,19 @@ class Light(Renderable):  # TODO figure out perspective projection
         self.pos_buffer = ctx.buffer(pos)
         self.color_buffer = ctx.buffer(Vector3(self.color, dtype='f4'))
 
-        # self.proj = Matrix44.perspective_projection(
-        #     45, aspect_ratio, 1.0, self.pos[2] * 2, dtype='f4'
-        # )
+        self.near = abs(self.pos[2]) / 4.0
+        self.far = (self.pos[0]**2 + self.pos[1]**2 + self.pos[2]**2)**0.5 + (board_width**2 + board_height**2)**0.5
 
+        left = -1.5 * board_width - abs(pos[0])
+        right = 1.5 * board_width + abs(pos[0])
+        top = -1.5 * board_height - abs(pos[1])
+        bottom = 1.5 * board_height + abs(pos[1])
         self.proj = Matrix44.orthogonal_projection(
-            -100, 100, -100, 100, 0.1, self.pos[2] * 2.0, dtype='f4'
+            left, right, top, bottom, self.near, self.far, dtype='f4'
         )
+
         self.view = Matrix44.look_at(
-            pos, (0, 0, 0), (0, 0, 1), dtype='f4'
+            pos, (0, 0, 0), (0, 1, 0), dtype='f4'
         )
         self.view_proj = self.proj * self.view
         self.view_proj_buffer = ctx.buffer(self.view_proj)
@@ -545,17 +550,17 @@ class SnakeRenderer(Renderable):
         right_transform = left_transform.copy()
 
         if direction == 'left':
-            left_transform.translate(Vector3([0.3, -1.0, 0.85], dtype='f4'))
-            right_transform.translate(Vector3([0.3, 1.0, 0.85], dtype='f4'))
+            left_transform.translate(Vector3([-0.3, 0.85, -1.0], dtype='f4'))
+            right_transform.translate(Vector3([-0.3, 0.85, 1.0], dtype='f4'))
         elif direction == 'right':
-            left_transform.translate(Vector3([-0.3, -1.0, 0.85], dtype='f4'))
-            right_transform.translate(Vector3([-0.3, 1.0, 0.85], dtype='f4'))
+            left_transform.translate(Vector3([0.3, 0.85, -1.0], dtype='f4'))
+            right_transform.translate(Vector3([0.3, 0.85, 1.0], dtype='f4'))
         elif direction == 'up':
-            left_transform.translate(Vector3([-1.0, 0.3, 0.85], dtype='f4'))
-            right_transform.translate(Vector3([1.0, 0.3, 0.85], dtype='f4'))
+            left_transform.translate(Vector3([-1.0, 0.85, -0.3], dtype='f4'))
+            right_transform.translate(Vector3([1.0, 0.85, -0.3], dtype='f4'))
         elif direction == 'down':
-            left_transform.translate(Vector3([1.0, 0.3, 0.85], dtype='f4'))
-            right_transform.translate(Vector3([-1.0, 0.3, 0.85], dtype='f4'))
+            left_transform.translate(Vector3([-1.0, 0.85, 0.3], dtype='f4'))
+            right_transform.translate(Vector3([1.0, 0.85, 0.3], dtype='f4'))
 
         return [left_transform, right_transform]
 
@@ -616,7 +621,7 @@ class WallRenderer(Renderable):
                 translation=Scene.grid_position(
                     x, y, game.board_width, game.board_height
                 ),
-                scale=Vector3([1.0, 1.0, 1.5], dtype='f4')
+                scale=Vector3([1.0, 1.5, 1.0], dtype='f4')
             ) for x, y in self.wall_locations
         ]
 
@@ -688,17 +693,20 @@ class BoardRenderer(Renderable):
     def __init__(self, board_width: int, board_height: int, theme: Theme):
         horizontal_scale = Vector3([board_width * 2, 0.1, 1], dtype='f4')
         vertical_scale = Vector3([0.1, board_height * 2, 1], dtype='f4')
+        rotation = Vector3([math.pi / 2, 0, 0], dtype='f4')
         transforms = [
             *(
                 Transform3D(
                     translation=Vector3([x, 0, 0], dtype='f4'),
-                    scale=vertical_scale
+                    scale=vertical_scale,
+                    rotation=rotation
                 ) for x in range(-board_width + 2, board_width, 2)
             ),
             *(
                 Transform3D(
-                    translation=Vector3([0, y, 0], dtype='f4'),
-                    scale=horizontal_scale
+                    translation=Vector3([0, 0, y], dtype='f4'),
+                    scale=horizontal_scale,
+                    rotation=rotation
                 ) for y in range(-board_height + 2, board_height, 2)
             )
         ]
@@ -710,8 +718,9 @@ class BoardRenderer(Renderable):
         self.should_update = True
 
         transforms = Transform3D(
-            translation=Vector3([0, 0, -0.05], dtype='f4'),
-            scale=Vector3([board_width * 2, board_height * 2, 1], dtype='f4')
+            translation=Vector3([0, -0.05, 0], dtype='f4'),
+            scale=Vector3([board_width * 2, board_height * 2, 1], dtype='f4'),
+            rotation=rotation
         )
 
         self.quad = InstancedObject(1, geom.quad_2d, 'lighting', theme.background, [transforms])
@@ -761,6 +770,8 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
 
         self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
+        hdr_depth_texture = ctx.depth_texture(viewport_dimensions)
+        hdr_textures = [self.scene_texture, self.brightness_texture]
 
         ping_pong_dimensions = viewport_dimensions[0] // 6, viewport_dimensions[1] // 6
 
@@ -768,16 +779,13 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
             ctx.texture(ping_pong_dimensions, 4, dtype='f2'),
             ctx.texture(ping_pong_dimensions, 4, dtype='f2')
         ]
-        for texture in chain(self.ping_pong_textures, [self.scene_texture, self.brightness_texture]):
+        for texture in chain(self.ping_pong_textures, hdr_textures):
             texture.repeat_x = False
             texture.repeat_y = False
             texture.filter = moderngl.LINEAR, moderngl.LINEAR
 
         self.hdr_framebuffer = ctx.framebuffer(
-            depth_attachment=ctx.depth_texture(viewport_dimensions), color_attachments=[
-                self.scene_texture,
-                self.brightness_texture
-            ]
+            depth_attachment=hdr_depth_texture, color_attachments=hdr_textures
         )
 
         self.ping_pong_framebuffers = [
@@ -787,13 +795,14 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
 
         self.blur_program = state.shader_program_repo['blur']
 
-        self.quad = InstancedObject(
-            1, geom.quad_2d, 'bloom_final', None, [Transform3D()], vao_generator_kwargs={'size': (2.0, 2.0)}
-        )
-
-        prog = state.shader_program_repo['bloom_final'].program
+        prog_name = 'bloom_final_fxaa'
+        prog = state.shader_program_repo[prog_name].program
         prog['scene'].value = 0
         prog['bloomBlur'].value = 1
+
+        self.quad = InstancedObject(
+            1, geom.quad_2d, prog_name, None, [Transform3D()], vao_generator_kwargs={'size': (2.0, 2.0)}
+        )
 
     def blur(self) -> bool:
         horizontal = True
@@ -826,7 +835,7 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
         mglw.ctx().screen.use()
         self.scene_texture.use(location=0)
         self.ping_pong_textures[horizontal].use(location=1)
-        self.quad.render(value_uniforms={'bloom': True, 'exposure': 1.0})
+        self.quad.render(value_uniforms={'exposure': 1.0})
 
 
 class Scene(Renderable):
@@ -841,23 +850,24 @@ class Scene(Renderable):
 
         max_dim = max(self.board_width / aspect_ratio, self.board_height)
         
-        self.camera_pos = 0.0, max_dim * 2.1, max_dim * 2.25
+        self.camera_pos = 0.0, max_dim * 2.25, max_dim * 2.1
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
 
         self.proj = Matrix44.perspective_projection(
             45.0, self.aspect_ratio, 0.1, self.camera_pos[2] * 2, dtype='f4'
         )
         self.view = Matrix44.look_at(
-            self.camera_pos, (0, 0, 0), (0, 0, 1), dtype='f4'
+            self.camera_pos, (0, 0, 0), (0, 1, 0), dtype='f4'
         )
         self.view_proj = self.proj * self.view
 
         self.shadow_map = ShadowMap()
 
-        light_pos = [max_dim * 0.9, -max_dim * .65, max_dim * 1.1]
+        light_pos = -max_dim * 0.9, max_dim * 1.1, -max_dim * 0.65
+        # light_pos = self.camera_pos
         self.light = Light(
-            Vector3(light_pos, dtype='f4'), Color(255, 255, 255), radius=max_dim / 4,
-            aspect_ratio=self.shadow_map.width / self.shadow_map.height
+            Vector3(light_pos, dtype='f4'), Color(255, 255, 255), self.board_width, self.board_height,
+            radius=max_dim / 4, aspect_ratio=self.shadow_map.width / self.shadow_map.height
         )
         self.light.update(self.view_proj)
 
@@ -904,7 +914,7 @@ class Scene(Renderable):
     @staticmethod
     def grid_position(x: int, y: int, width: int, height: int) -> Vector3:
         return Vector3(
-            [width - 2 * x - 1, 2 * y + 1 - height, 1], dtype='f4'
+            [2 * x + 1 - width, 1, 2 * y + 1 - height], dtype='f4'
         )
 
     def update(self) -> None:
