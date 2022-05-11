@@ -19,7 +19,7 @@ uniform sampler2D scene;
 uniform sampler2D bloomBlur;
 
 uniform bool bloom;
-uniform float exposure;
+uniform float exposure = 1.0;
 
 in vec2 TexCoords;
 

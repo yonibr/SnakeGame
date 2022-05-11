@@ -835,7 +835,7 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
         mglw.ctx().screen.use()
         self.scene_texture.use(location=0)
         self.ping_pong_textures[horizontal].use(location=1)
-        self.quad.render(value_uniforms={'exposure': 1.0})
+        self.quad.render()
 
 
 class Scene(Renderable):
