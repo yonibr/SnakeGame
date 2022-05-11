@@ -21,7 +21,12 @@ in vec3 v_color;
 out vec4 f_color;
 
 void main() {
-    f_color = vec4(v_color.rgb, 1.0);
+    const float gamma = 2.2;
+    const vec3 correction_vec = vec3(1.0 / gamma);
+    
+    // Gamma correction
+    vec3 result = pow(v_color.rgb, correction_vec);
+    f_color = vec4(result, 1.0);
 }
 
 #endif
