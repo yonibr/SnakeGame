@@ -192,7 +192,6 @@ class Font(object):
         
         ctx = mglw.ctx()
         self.texture = ctx.texture((self.texture_width, self.texture_height), 1, data=data)
-        # self.texture.write(Z)
         self.texture.build_mipmaps()
 
 
@@ -235,6 +234,7 @@ class TextRenderer(Renderable):
         self.x = x
         self.y = y
         self.vaos = []
+        self.backup_vaos = []
         self._text = self._previous_text = ''
         self.text = text
 
@@ -246,10 +246,12 @@ class TextRenderer(Renderable):
     def text(self, new_text: str) -> None:
         self._previous_text = self._text
         self._text = new_text
-        rows = self.text.replace('\t', ' ' * 4).split('\n')
+
+        # Set width and hight of text area
+        rows = self._text.replace('\t', ' ' * 4).split('\n')
         self.width = max(len(row) for row in rows) * self.font.char_width
         self.height = len(rows) * self.font.char_height
-        self.backup_vaos = []
+
         self.create_vaos_and_buffer_data()
 
     def previous_text_at_index(self, index: int):
@@ -291,7 +293,7 @@ class TextRenderer(Renderable):
 
         special_char_counter = 0
         for i in range(len(self.text)):
-            # If needed, try to pull a backup VAO into self.vaos
+            # If needed, try to pull a backup VAO into self.vaos so we don't have to crate a new VAO
             if i >= len(self.vaos) and len(self.backup_vaos):
                 self.vaos.append(self.backup_vaos.pop())
 
@@ -475,30 +477,32 @@ class Light(Renderable):
             radius: float=5.0,
             brightness=5.0,
             rendered_color: Color=Color(249, 215, 28)):
-        ctx = mglw.ctx()
         self.pos = pos
         self.color = color.r / 255, color.g / 255, color.b / 255
         self.brightness = brightness
-        self.pos_buffer = ctx.buffer(pos)
-        self.color_buffer = ctx.buffer(Vector3(self.color, dtype='f4'))
 
-        self.near = abs(self.pos[2]) / 6.0
-        self.far = (self.pos[0]**2 + self.pos[1]**2 + self.pos[2]**2)**0.5 + (board_width**2 + board_height**2)**0.5
-
+        # Set up view and projection matrices
         left = -1.5 * board_width - abs(pos[0])
         right = 1.5 * board_width + abs(pos[0])
         top = -1.5 * board_height - abs(pos[1])
         bottom = 1.5 * board_height + abs(pos[1])
+        near = abs(self.pos[2]) / 6.0
+        far = (self.pos[0]**2 + self.pos[1]**2 + self.pos[2]**2)**0.5 + (board_width**2 + board_height**2)**0.5
         self.proj = Matrix44.orthogonal_projection(
-            left, right, top, bottom, self.near, self.far, dtype='f4'
+            left, right, top, bottom, near, far, dtype='f4'
         )
-
         self.view = Matrix44.look_at(
             pos, (0, 0, 0), (0, 1, 0), dtype='f4'
         )
         self.view_proj = self.proj * self.view
+
+        # Buffer the light data used by various shaders
+        ctx = mglw.ctx()
+        self.pos_buffer = ctx.buffer(pos)
+        self.color_buffer = ctx.buffer(Vector3(self.color, dtype='f4'))
         self.view_proj_buffer = ctx.buffer(self.view_proj)
 
+        # Create a sphere to render as the light
         transforms = Transform3D(translation=pos)
         self.sphere = InstancedObject(
             1, geom.sphere, 'lighting', rendered_color, [transforms],
@@ -691,6 +695,7 @@ class FoodRenderer(Renderable):
 
 class BoardRenderer(Renderable):
     def __init__(self, board_width: int, board_height: int, theme: Theme):
+        # Create grid
         horizontal_scale = Vector3([board_width * 2, 0.1, 1], dtype='f4')
         vertical_scale = Vector3([0.1, board_height * 2, 1], dtype='f4')
         rotation = Vector3([math.pi / 2, 0, 0], dtype='f4')
@@ -710,29 +715,29 @@ class BoardRenderer(Renderable):
                 ) for y in range(-board_height + 2, board_height, 2)
             )
         ]
-
         self.grid = InstancedObject(
             board_width + board_height - 2, geom.quad_2d, 'lighting', theme.grid, transforms
         )
 
-        self.should_update = True
-
+        # Create floor
         transforms = Transform3D(
             translation=Vector3([0, -0.05, 0], dtype='f4'),
             scale=Vector3([board_width * 2, board_height * 2, 1], dtype='f4'),
             rotation=rotation
         )
+        self.floor = InstancedObject(1, geom.quad_2d, 'lighting', theme.background, [transforms])
 
-        self.quad = InstancedObject(1, geom.quad_2d, 'lighting', theme.background, [transforms])
+        self.should_update = True
 
     def update(self, view_proj: Matrix44) -> None:
+        # Set the view projection matrix in the floor and the grid, which only needs to happen once
         if self.should_update:
             self.should_update = False
-            self.quad.update(view_proj)
+            self.floor.update(view_proj)
             self.grid.update(view_proj)
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
-        self.quad.render(
+        self.floor.render(
             value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
             override_program=override_program
         )
@@ -744,62 +749,69 @@ class BoardRenderer(Renderable):
 
 class ShadowMap(Renderable):
     def __init__(self, width: int=4096, height: int=4096):
+        ctx = mglw.ctx()
         self.width, self.height = width, height
-        self.shadow_map = mglw.ctx().depth_texture((self.width, self.height))
+
+        # Create the shadow map depth texture
+        self.shadow_map = ctx.depth_texture((self.width, self.height))
         self.shadow_map.compare_func = ''
         self.shadow_map.repeat_x = False
         self.shadow_map.repeat_y = False
         self.shadow_map.filter = moderngl.LINEAR, moderngl.LINEAR
 
-        self.frame_buffer = mglw.ctx().framebuffer(depth_attachment=self.shadow_map)
+        # Create the shadow map framebuffer
+        self.framebuffer = ctx.framebuffer(depth_attachment=self.shadow_map)
+
+        self.prog = state.shader_program_repo['shadow_map_depth']
 
     def render(self, renderables: Sequence[Renderable]):
-        self.frame_buffer.clear()
-        self.frame_buffer.use()
-
-        prog = state.shader_program_repo['shadow_map_depth']
+        self.framebuffer.clear()
+        self.framebuffer.use()
 
         for renderable in renderables:
-            renderable.render(override_program=prog)
+            renderable.render(override_program=self.prog)
 
 
-class HDRBloomRenderer(Renderable):  # TODO: Multisampling
+class HDRBloomRenderer(Renderable):
     def __init__(self):
-        viewport_dimensions = get_viewport_dimensions()
         ctx = mglw.ctx()
 
+        viewport_dimensions = get_viewport_dimensions()
+        ping_pong_dimensions = viewport_dimensions[0] // 6, viewport_dimensions[1] // 6
+
+        # Set up textures
         self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         hdr_depth_texture = ctx.depth_texture(viewport_dimensions)
         hdr_textures = [self.scene_texture, self.brightness_texture]
-
-        ping_pong_dimensions = viewport_dimensions[0] // 6, viewport_dimensions[1] // 6
-
         self.ping_pong_textures = [
             ctx.texture(ping_pong_dimensions, 4, dtype='f2'),
             ctx.texture(ping_pong_dimensions, 4, dtype='f2')
         ]
+
+        # Configure textures
         for texture in chain(self.ping_pong_textures, hdr_textures):
             texture.repeat_x = False
             texture.repeat_y = False
             texture.filter = moderngl.LINEAR, moderngl.LINEAR
 
+        # Set up framebuffers
         self.hdr_framebuffer = ctx.framebuffer(
             depth_attachment=hdr_depth_texture, color_attachments=hdr_textures
         )
-
         self.ping_pong_framebuffers = [
             ctx.framebuffer(color_attachments=[self.ping_pong_textures[0]]),
             ctx.framebuffer(color_attachments=[self.ping_pong_textures[1]])
         ]
 
+        # Set up programs
         self.blur_program = state.shader_program_repo['blur']
-
         prog_name = 'bloom_final_fxaa2'
         prog = state.shader_program_repo[prog_name].program
         prog['scene'].value = 0
         prog['bloomBlur'].value = 1
 
+        # Create quad which acts as a render target for the various textures
         self.quad = InstancedObject(
             1, geom.quad_2d, prog_name, None, [Transform3D()], vao_generator_kwargs={'size': (2.0, 2.0)}
         )
@@ -808,6 +820,9 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
         horizontal = True
         first_iteration = True
         amount = 12
+
+        # Repeatedly apply gaussian blur to the brightness texture, alternating between vertical
+        # and horizontal
         for i in range(amount):
             self.ping_pong_framebuffers[horizontal].use()
 
@@ -827,11 +842,14 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
         self.hdr_framebuffer.clear()
         self.hdr_framebuffer.use()
 
+        # Render scene to HDR framebuffer with two render targets—scene and brightness
         for renderable in renderables:
             renderable.render()
 
+        # Blur brightness texture
         horizontal = self.blur()
 
+        # Render scene and bloom textures to the screen
         mglw.ctx().screen.use()
         self.scene_texture.use(location=0)
         self.ping_pong_textures[horizontal].use(location=1)
@@ -849,10 +867,10 @@ class Scene(Renderable):
         self.board_height = game.board_height
 
         max_dim = max(self.board_width / aspect_ratio, self.board_height)
-        
+
+        # Create camera and associated view and projection matrices
         self.camera_pos = 0.0, max_dim * 2.25, max_dim * 2.1
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
-
         self.proj = Matrix44.perspective_projection(
             45.0, self.aspect_ratio, 0.1, self.camera_pos[2] * 2, dtype='f4'
         )
@@ -861,10 +879,11 @@ class Scene(Renderable):
         )
         self.view_proj = self.proj * self.view
 
+        # Create shadow map
         self.shadow_map = ShadowMap()
 
+        # Create light
         light_pos = -max_dim * 0.9, max_dim * 1.1, -max_dim * 0.65
-        # light_pos = self.camera_pos
         self.light = Light(
             Vector3(light_pos, dtype='f4'), Color(255, 255, 255), self.board_width, self.board_height,
             radius=max_dim / 4
@@ -929,5 +948,6 @@ class Scene(Renderable):
             # Render shadow map
             self.shadow_map.render(self.shadow_map_pass_renderables)
 
+            # Render scene
             self.shadow_map.shadow_map.use(location=0)
             self.hdr_bloom_renderer.render(self.hdr_bloom_pass_renderables)
