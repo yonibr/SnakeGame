@@ -795,7 +795,7 @@ class HDRBloomRenderer(Renderable):  # TODO: Multisampling
 
         self.blur_program = state.shader_program_repo['blur']
 
-        prog_name = 'bloom_final_fxaa'
+        prog_name = 'bloom_final_fxaa2'
         prog = state.shader_program_repo[prog_name].program
         prog['scene'].value = 0
         prog['bloomBlur'].value = 1
