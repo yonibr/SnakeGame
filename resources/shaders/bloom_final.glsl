@@ -18,7 +18,6 @@ void main()
 uniform sampler2D scene;
 uniform sampler2D bloomBlur;
 
-uniform bool bloom;
 uniform float exposure = 1.0;
 
 in vec2 TexCoords;
@@ -31,8 +30,7 @@ void main()
     const vec3 correction_vec = vec3(1.0 / gamma);
 
     vec3 hdrColor = texture(scene, TexCoords).rgb;
-    if (bloom)
-        hdrColor += texture(bloomBlur, TexCoords).rgb; // additive blending
+    hdrColor += texture(bloomBlur, TexCoords).rgb; // additive blending
 
     // tone mapping
     vec3 result = vec3(1.0) - exp(-hdrColor * exposure);
