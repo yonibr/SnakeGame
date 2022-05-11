@@ -482,7 +482,7 @@ class Light(Renderable):
         self.pos_buffer = ctx.buffer(pos)
         self.color_buffer = ctx.buffer(Vector3(self.color, dtype='f4'))
 
-        self.near = abs(self.pos[2]) / 4.0
+        self.near = abs(self.pos[2]) / 6.0
         self.far = (self.pos[0]**2 + self.pos[1]**2 + self.pos[2]**2)**0.5 + (board_width**2 + board_height**2)**0.5
 
         left = -1.5 * board_width - abs(pos[0])
