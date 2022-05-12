@@ -8,6 +8,7 @@ import time
 
 from functools import reduce
 from pygame.locals import K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE
+from moderngl_window.context.pyglet import Keys as PglKeys
 from pynput.keyboard import Key
 from typing import Any, Callable, List, Optional, Tuple, Union
 
@@ -68,6 +69,13 @@ key_maps = {
         K_LEFT: 'left',
         K_RIGHT: 'right',
         K_ESCAPE: 'escape'
+    },
+    'pyglet': {
+        PglKeys.UP: 'up',
+        PglKeys.DOWN: 'down',
+        PglKeys.LEFT: 'left',
+        PglKeys.RIGHT: 'right',
+        PglKeys.ESCAPE: 'escape'
     }
 }
 

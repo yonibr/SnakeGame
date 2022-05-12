@@ -53,6 +53,8 @@ if platform.system() != 'Windows':
 pg.mixer.pre_init()
 pg.init()
 
+os.environ['MODERNGL_WINDOW'] = 'pyglet'
+
 PI = 3.141592654
 
 config_defaults = {
@@ -1323,18 +1325,8 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.font = self.font_book['SFNSMono', 64]
 
     def key_event(self, key, action, modifiers):
-        if action == self.wnd.keys.ACTION_PRESS:
-            if key == self.wnd.keys.UP:
-                handle_input('up', False)
-            elif key == self.wnd.keys.DOWN:
-                handle_input('down', False)
-            elif key == self.wnd.keys.LEFT:
-                handle_input('left', False)
-            elif key == self.wnd.keys.RIGHT:
-                handle_input('right', False)
-        elif action == self.wnd.keys.ACTION_RELEASE:
-            if key == self.wnd.keys.ESCAPE:
-                handle_input('escape', True)
+        if action in {self.wnd.keys.ACTION_PRESS, self.wnd.keys.ACTION_RELEASE}:
+            handle_input(parse_key(key, 'pyglet'), action == self.wnd.keys.ACTION_RELEASE)
 
     def render(self, run_time: float, frame_time: float):
         self.elapsed_time += frame_time
