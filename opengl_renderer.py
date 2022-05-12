@@ -3,8 +3,6 @@
 #    - Procedurally generated tapered snake body
 #    - When adding instances, grow buffers rather than just deleting and recreating;
 #      see moderngl example growing_buffers.py
-#    - destroy resources
-#    - Sounds
 
 import math
 import moderngl
@@ -39,6 +37,9 @@ class ShaderProgram(object):
             name: program[name] for name in program if isinstance(program[name], moderngl.Uniform)
         }
         print(self.uniforms)
+
+    def __del__(self):
+        self.program.release()
 
     def write_uniform(self, name: str, value: Any) -> None:
         if name in self.uniforms:
@@ -194,6 +195,9 @@ class Font(object):
         self.texture = ctx.texture((self.texture_width, self.texture_height), 1, data=data)
         self.texture.build_mipmaps()
 
+    def __del__(self):
+        self.texture.release()
+
 
 class FontBook(MappingABC):
     def __init__(self, res_dir: str='resources/fonts'):
@@ -237,6 +241,10 @@ class TextRenderer(Renderable):
         self.backup_vaos = []
         self._text = self._previous_text = ''
         self.text = text
+
+    def __del__(self):
+        for vao in chain(self.vaos, self.backup_vaos):
+            vao.release()
 
     @property
     def text(self) -> str:
@@ -397,6 +405,11 @@ class InstancedObject(Renderable):
         self.instance_texture_coords = None
         self.create_vao_and_buffers()
 
+    def __del__(self):
+        # Note: Since moderngl_window.opengl.vao.VAO defaults to releasing buffers, we don't need
+        # to do so manually.
+        self.vao.release()
+
     def create_vao_and_buffers(self) -> None:
         ctx = mglw.ctx()
         length = self.instance_count
@@ -510,6 +523,11 @@ class Light(Renderable):
         )
 
         self.should_update = True
+
+    def __del__(self):
+        self.pos_buffer.release()
+        self.color_buffer.release()
+        self.view_proj_buffer.release()
 
     def update(self, view_proj: Matrix44) -> None:
         if self.should_update:
@@ -764,6 +782,10 @@ class ShadowMap(Renderable):
 
         self.prog = state.shader_program_repo['shadow_map_depth']
 
+    def __del__(self):
+        self.shadow_map.release()
+        self.framebuffer.release()
+
     def render(self, renderables: Sequence[Renderable]):
         self.framebuffer.clear()
         self.framebuffer.use()
@@ -782,7 +804,7 @@ class HDRBloomRenderer(Renderable):
         # Set up textures
         self.scene_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
         self.brightness_texture = ctx.texture(viewport_dimensions, 4, dtype='f2')
-        hdr_depth_texture = ctx.depth_texture(viewport_dimensions)
+        self.hdr_depth_texture = ctx.depth_texture(viewport_dimensions)
         hdr_textures = [self.scene_texture, self.brightness_texture]
         self.ping_pong_textures = [
             ctx.texture(ping_pong_dimensions, 4, dtype='f2'),
@@ -797,7 +819,7 @@ class HDRBloomRenderer(Renderable):
 
         # Set up framebuffers
         self.hdr_framebuffer = ctx.framebuffer(
-            depth_attachment=hdr_depth_texture, color_attachments=hdr_textures
+            depth_attachment=self.hdr_depth_texture, color_attachments=hdr_textures
         )
         self.ping_pong_framebuffers = [
             ctx.framebuffer(color_attachments=[self.ping_pong_textures[0]]),
@@ -815,6 +837,12 @@ class HDRBloomRenderer(Renderable):
         self.quad = InstancedObject(
             1, geom.quad_2d, prog_name, None, [Transform3D()], vao_generator_kwargs={'size': (2.0, 2.0)}
         )
+
+    def __del__(self):
+        textures = [*self.ping_pong_textures, self.hdr_depth_texture, self.brightness_texture, self.scene_texture]
+        framebuffers = [*self.ping_pong_framebuffers, self.hdr_framebuffer]
+        for obj in chain(textures, framebuffers):
+            obj.release()
 
     def blur(self) -> bool:
         horizontal = True
@@ -929,6 +957,9 @@ class Scene(Renderable):
         ]
 
         self.hdr_bloom_pass_renderables = [*self.shadow_map_pass_renderables, self.light]
+
+    def __del__(self):
+        self.camera_pos_buffer.release()
 
     @staticmethod
     def grid_position(x: int, y: int, width: int, height: int) -> Vector3:
