@@ -12,6 +12,7 @@ import numpy as np
 import os
 import platform
 import pygame as pg
+import pyglet
 import subprocess
 import time
 
@@ -54,6 +55,7 @@ pg.mixer.pre_init()
 pg.init()
 
 os.environ['MODERNGL_WINDOW'] = 'pyglet'
+os.environ['PYGLET_AUDIO'] = 'openal,pulse,xaudio2,directsound,silent'
 
 PI = 3.141592654
 
@@ -129,7 +131,7 @@ class PGRenderer(Renderer):
         self.draw_game_over = False
 
         if kw_args['enable_sound']:
-            self.eating_sound = Sound('eating_sound.wav')
+            self.eating_sound = Sound('resources/audio/eating_sound.wav')
 
     def render(self, game: Game) -> None:
         arr = self.game_to_array(game)
@@ -741,7 +743,7 @@ class PGRenderer3(PGRenderer2):
         food_rect = self.draw_food(game)
         if food_rect:
             dirty_rects.append(food_rect)
-            if not first_render and hasattr(self, 'eating_sound'):
+            if not first_render and self.eating_sound:
                 self.eating_sound.play()
 
         dirty_rects.extend(self.draw_all_text(game))
@@ -1275,6 +1277,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.high_score_vert_line = None
         self.high_score_horiz_line = None
         self.font = None
+        self.food_pos = None
         self.orthogonal_proj = None
         self.viewport_height = None
         self.viewport_width = None
@@ -1292,8 +1295,10 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.high_scores_renderer = None
         self.elapsed_time = self.frames = 0
         self.draw_game_over = False
+        self.eating_sound = None
 
-        self.initialize(state.game, theme=self.argv.theme)
+        print(self.argv)
+        self.initialize(state.game, **vars(self.argv))
 
     # We want to add the snake arguments to this class so it doesn't fail when parsing
     @classmethod
@@ -1303,9 +1308,12 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     def initialize(self, game: Game, **kw_args: Any) -> None:
         state.shader_program_repo = ProgramRepository()
         self.game = game
-
+        self.food_pos = game.food.pos
         self.theme = themes[kw_args['theme']]
         self.background_color = tuple(x / 255 for x in self.theme.background)
+
+        if kw_args['enable_sound']:
+            self.eating_sound = pyglet.media.load('resources/audio/eating_sound.wav', streaming=False)
 
         self.scene = Scene(self.game, self.theme, aspect_ratio=self.aspect_ratio)
         self.font_book = FontBook()
@@ -1334,6 +1342,12 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         if self.elapsed_time >= 1:
             self.fps = self.frames / self.elapsed_time
             self.frames = self.elapsed_time = 0
+
+        food_pos = self.game.food.pos
+        if self.food_pos != food_pos:
+            self.food_pos = food_pos
+            if self.eating_sound:
+                self.eating_sound.play()
 
         self.ctx.clear(*self.background_color)
         self.scene.render(run_time, frame_time)
