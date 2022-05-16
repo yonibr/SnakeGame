@@ -31,11 +31,13 @@ class SetInterval(object):
             action: Callable[..., Any],
             callback: Optional[Callable[[Any], Any]],
             *params: Any,
+            wait_for_state_run: bool=True,
             **kwparams: Any):
         self.interval = interval
         self.delay = delay
         self.action = action
         self.callback = callback
+        self.wait_for_state_run = wait_for_state_run
         self.stopEvent = threading.Event()
         self.params = params
         self.kwparams = kwparams
@@ -43,6 +45,8 @@ class SetInterval(object):
         thread.start()
 
     def __set_interval(self) -> None:
+        while not state.run and self.wait_for_state_run:
+            time.sleep(0.005)
         time.sleep(self.delay)
         next_time = time.time() + self.interval
         while not self.stopEvent.wait(next_time - time.time()):

@@ -83,14 +83,15 @@ def exit_game() -> None:
 
 
 def loop(game: Game) -> bool:
-    if state.input_hook: # TODO instead of adding to direction_queue, make input_hook have get_input 
-        state.input_hook.run()
+    if state.run:
+        if state.input_hook:  # TODO instead of adding to direction_queue, make input_hook have get_input
+            state.input_hook.run()
 
-    with state.direction_queue_lock:
-        if len(state.direction_queue):
-            game.snake.direction = state.direction_queue.pop()
+        with state.direction_queue_lock:
+            if len(state.direction_queue):
+                game.snake.direction = state.direction_queue.pop()
 
-    game.tick()
+        game.tick()
 
     return game.game_over
 
@@ -165,10 +166,7 @@ def main():
 
     renderer_name = other_params['renderer']
 
-    state.run = True
-
     tick_time = other_params['tick_time']
-
 
     if renderer_name != 'OpenGL':
         renderer = renderers[renderer_name]()
@@ -180,9 +178,12 @@ def main():
             listener.start()
 
         state.interval = SetInterval(tick_time, 2, loop, callback, state.game)
+        state.run = True
+
         renderer.run(state.game)
     else:
-        state.interval = SetInterval(tick_time, 10, loop, callback, state.game)
+        state.interval = SetInterval(tick_time, 5, loop, callback, state.game)
+        # Note: OpenGL renderer needs to set state.run = True because it can take a while to start up
         renderers[renderer_name].start()
 
 

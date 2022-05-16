@@ -1300,6 +1300,10 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         print(self.argv)
         self.initialize(state.game, **vars(self.argv))
 
+        # Note: after we finish rendering the first frame, set state.run to true. We do it in the
+        # renderer instead of in main because startup can take a while.
+        self.should_set_state_run = True
+
     # We want to add the snake arguments to this class so it doesn't fail when parsing
     @classmethod
     def add_arguments(cls, parser):
@@ -1313,7 +1317,9 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.background_color = tuple(x / 255 for x in self.theme.background)
 
         if kw_args['enable_sound']:
-            self.eating_sound = pyglet.media.load('resources/audio/eating_sound.wav', streaming=False)
+            self.eating_sound = pyglet.media.load(
+                'resources/audio/eating_sound.wav', streaming=False
+            )
 
         self.scene = Scene(
             self.game, self.theme, kw_args['taper_opengl'], aspect_ratio=self.aspect_ratio
@@ -1355,6 +1361,10 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.scene.render(run_time, frame_time)
         self.ctx.enable(moderngl.BLEND)
         self.draw_all_text()
+
+        if self.should_set_state_run:
+            self.should_set_state_run = False
+            state.run = True
 
     def game_over(self, game: Game) -> None:
         pass
