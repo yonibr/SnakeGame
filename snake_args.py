@@ -88,6 +88,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         '-es', '--enable_sound', help='Enables playing sounds in supported renderers.',
         action='store_true'
     )
+    parser.add_argument(
+        '--taper_opengl', help='Enables tapered snake in OpenGL renderer.',
+        action='store_true'
+    )
     parser.add_argument('--level', default=DEFAULT_LEVEL, type=str, choices=levels.keys())
 
     group = parser.add_mutually_exclusive_group()
@@ -102,6 +106,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     parser.set_defaults(show_grid=None)
     parser.set_defaults(enable_sound=False)
+    parser.set_defaults(taper_opengl=False)
 
 
 def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Union[float, int, str]]]:

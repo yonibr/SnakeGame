@@ -1315,7 +1315,9 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         if kw_args['enable_sound']:
             self.eating_sound = pyglet.media.load('resources/audio/eating_sound.wav', streaming=False)
 
-        self.scene = Scene(self.game, self.theme, aspect_ratio=self.aspect_ratio)
+        self.scene = Scene(
+            self.game, self.theme, kw_args['taper_opengl'], aspect_ratio=self.aspect_ratio
+        )
         self.font_book = FontBook()
 
         self.viewport_width,  self.viewport_height = get_viewport_dimensions()

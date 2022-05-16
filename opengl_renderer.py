@@ -1,10 +1,12 @@
 # TODO:
 #    - Shader to give snake scales?
-#    - Procedurally generated tapered snake body
 #    - When adding instances, grow buffers rather than just deleting and recreating;
 #      see moderngl example growing_buffers.py
+#    - Switch text rendering to generating quads using a geometry shader
 
 import math
+from collections import defaultdict
+
 import moderngl
 import moderngl_window as mglw
 import numpy as np
@@ -104,7 +106,7 @@ class Transform3D(object):
         self._translation = value
         self.translation_matrix = Matrix44.from_translation(self._translation, dtype='f4')
         self._transformation_matrix = None
-    
+
     @property
     def rotation(self) -> Vector3:
         return self._rotation
@@ -190,7 +192,7 @@ class Font(object):
 
         data = np.flip(data, axis=0).copy()
         self.texture_height, self.texture_width = data.shape
-        
+
         ctx = mglw.ctx()
         self.texture = ctx.texture((self.texture_width, self.texture_height), 1, data=data)
         self.texture.build_mipmaps()
@@ -553,12 +555,12 @@ class SnakeRenderer(Renderable):
         ]
         self.snake_length = len(transforms)
 
-        self.instanced_cube = InstancedObject(
+        self.body = InstancedObject(
             len(transforms), geom.cube, 'lighting', theme.snake, transforms,
             vao_generator_kwargs={'size': (2.0, 2.0, 2.0)}
         )
 
-        self.instanced_sphere = InstancedObject(
+        self.eyes = InstancedObject(
             2, geom.sphere, 'lighting', theme.eyes, self.get_eye_transforms(),
             vao_generator_kwargs={'radius': 0.25}
         )
@@ -568,7 +570,7 @@ class SnakeRenderer(Renderable):
     def get_eye_transforms(self) -> List[Transform3D]:
         direction = self.snake.direction.name
 
-        left_transform = self.instanced_cube.transforms[0].copy()
+        left_transform = self.body.transforms[0].copy()
         right_transform = left_transform.copy()
 
         if direction == 'left':
@@ -610,24 +612,24 @@ class SnakeRenderer(Renderable):
             new_transforms = []
             for i, node in enumerate(self.snake):
                 position = Scene.grid_position(node.x, node.y, board_width, board_height)
-                if i < self.instanced_cube.instance_count:
-                    self.instanced_cube.transforms[i].translation = position
+                if i < self.body.instance_count:
+                    self.body.transforms[i].translation = position
                 else:
                     new_transforms.append(Transform3D(translation=position))
-            self.instanced_cube.add_instances(new_transforms)
-            self.instanced_cube.update(view_proj)
+            self.body.add_instances(new_transforms)
+            self.body.update(view_proj)
 
-            self.instanced_sphere.transforms = self.get_eye_transforms()
-            self.instanced_sphere.update(view_proj)
+            self.eyes.transforms = self.get_eye_transforms()
+            self.eyes.update(view_proj)
 
             self.first_update = False
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
-        self.instanced_cube.render(
+        self.body.render(
             value_uniforms={'specularStrength': 0.1, 'is_light_source': False},
             override_program=override_program
         )
-        self.instanced_sphere.render(
+        self.eyes.render(
             value_uniforms={'specularStrength': 1.0, 'is_light_source': False},
             override_program=override_program
         )
@@ -703,7 +705,7 @@ class FoodRenderer(Renderable):
             self.sphere.update(view_proj)
 
             self.first_update = False
-            
+
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.sphere.render(
             value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
@@ -762,6 +764,224 @@ class BoardRenderer(Renderable):
         self.grid.render(
             value_uniforms={'specularStrength': 0.0, 'is_light_source': False},
             override_program=override_program
+        )
+
+
+class TaperedSnakeRenderer(Renderable):
+    def __init__(self, game: Game, theme: Theme):
+        self.snake = game.snake
+        self.head_location = self.snake.head.pos
+        self.snake_length = len(self.snake)
+        self.color = theme.snake.r / 255, theme.snake.g / 255, theme.snake.b / 255
+        self.first_update = True
+
+        # Because VAO instances are cached internally in mglw.vao, we need to force# it to
+        # regenerate the instance when the buffers grow
+        self.clear_vao_instance = defaultdict(lambda: True)
+
+        self.start_radius = 0.85
+
+        head_translation = Scene.grid_position(
+            *self.head_location, game.board_width, game.board_height
+        )
+        self.transform = Transform3D(
+            translation=head_translation
+        )
+
+        transforms = [
+            Transform3D() for _ in range(self.snake_length - 1)
+        ]
+        self.curve_spheres = InstancedObject(
+            self.snake_length - 1, geom.sphere, 'lighting', theme.snake, transforms,
+            vao_generator_kwargs={'radius': 0.95}
+        )
+
+        self.mvp_buffer = None
+        self.model_buffer = None
+        self.normal_mat_buffer = None
+        self.body_buffer = None
+        self.tail = None
+        self.create_buffers()
+        self.create_tail(game.board_width, game.board_height)
+        self.tail.buffer(self.mvp_buffer, '16f/r', ['mvp'])
+        self.tail.buffer(self.model_buffer, '16f/r', ['model'])
+        self.tail.buffer(self.normal_mat_buffer, '9f/r', ['normal_mat'])
+
+        self.body_program = state.shader_program_repo['snake_procedural']
+        self.body_shadow_map_prog = state.shader_program_repo['snake_procedural_shadow_map_depth']
+
+        self.head_transform = Transform3D(
+            translation=head_translation,
+            scale=Vector3([1, self.start_radius, self.start_radius], dtype='f4')
+        )
+        self.head = InstancedObject(
+            1, geom.sphere, 'lighting', theme.snake, [self.head_transform],
+            vao_generator_kwargs={'radius': 1.0}
+        )
+
+        self.eyes = InstancedObject(
+            2, geom.sphere, 'lighting', theme.eyes, self.get_eye_transforms(),
+            vao_generator_kwargs={'radius': 0.25}
+        )
+
+    def get_eye_transforms(self) -> List[Transform3D]:
+        direction = self.snake.direction.name
+
+        left_transform = self.transform.copy()
+        right_transform = left_transform.copy()
+
+        if direction == 'left':
+            left_transform.translate(Vector3([-0.3, 0.5, -self.start_radius * 0.65], dtype='f4'))
+            right_transform.translate(Vector3([-0.3, 0.5, self.start_radius * 0.65], dtype='f4'))
+        elif direction == 'right':
+            left_transform.translate(Vector3([0.3, 0.5, -self.start_radius * 0.65], dtype='f4'))
+            right_transform.translate(Vector3([0.3, 0.5, self.start_radius * 0.65], dtype='f4'))
+        elif direction == 'up':
+            left_transform.translate(Vector3([-self.start_radius * 0.65, 0.5, -0.3], dtype='f4'))
+            right_transform.translate(Vector3([self.start_radius * 0.65, 0.5, -0.3], dtype='f4'))
+        elif direction == 'down':
+            left_transform.translate(Vector3([-self.start_radius * 0.65, 0.5, 0.3], dtype='f4'))
+            right_transform.translate(Vector3([self.start_radius * 0.65, 0.5, 0.3], dtype='f4'))
+
+        return [left_transform, right_transform]
+
+    def create_tail(self, board_width: int, board_height: int):
+        snake_length = self.snake_length
+        start_radius = self.start_radius
+        min_radius = 0.2
+        decrease = (start_radius - min_radius) / (snake_length - 1)
+
+        positions = [
+            Scene.grid_position(*node.pos, board_width, board_height)
+            for node in self.snake
+        ]
+
+        points = np.fromiter(
+            chain(*positions), dtype='f4'
+        ).reshape(snake_length, 3)
+        points -= points[0]
+        radii = start_radius - np.arange(snake_length, dtype='f4') * decrease
+
+        for i, transform in enumerate(self.curve_spheres.transforms):
+            transform.scale_factor = Vector3([radii[i + 1]] * 3, dtype='f4')
+            transform.translation = Vector3(positions[i + 1])
+
+        body = np.concatenate([points, radii[:, np.newaxis]], axis=1).flatten()
+        self.body_buffer.write(body)
+
+        if self.first_update:
+            self.tail = VAO('tail')
+            self.tail.buffer(self.body_buffer, '4f', ['in_position'])
+        self.tail.vertex_count = body.shape[0]
+        self.tail.get_buffer_by_name('in_position').vertices = body.shape[0]
+        self.clear_vao_instance.clear()
+
+    def update_head_scale(self):
+        direction = self.snake.direction.name
+
+        if direction == 'left' or direction == 'right':
+            self.head_transform.scale_factor = Vector3([1, self.start_radius, self.start_radius], dtype='f4')
+        else:
+            self.head_transform.scale_factor = Vector3([self.start_radius, 1, self.start_radius], dtype='f4')
+
+    def create_buffers(self):
+        ctx = mglw.ctx()
+        length = self.snake_length
+
+        if self.mvp_buffer:
+            self.mvp_buffer.orphan(4 * 16 * length)
+        else:
+            self.mvp_buffer = ctx.buffer(reserve=4 * 16 * length)
+
+        if self.model_buffer:
+            self.model_buffer.orphan(4 * 16 * length)
+        else:
+            self.model_buffer = ctx.buffer(reserve=4 * 16 * length)
+
+        if self.normal_mat_buffer:
+            self.normal_mat_buffer.orphan(4 * 9 * length)
+        else:
+            self.normal_mat_buffer = ctx.buffer(reserve=4 * 9 * length)
+
+        if self.body_buffer:
+            self.body_buffer.orphan(4 * 4 * length)
+        else:
+            self.body_buffer = ctx.buffer(reserve=4 * 4 * length)
+
+    def update(self, view_proj: Matrix44, board_width: int, board_height: int) -> None:
+        needs_update = self.first_update
+
+        # If snake grew, create new buffers since there are more instances
+        current_length = len(self.snake.nodes)
+        if current_length > self.snake_length:
+            self.snake_length = current_length
+            needs_update = True
+            self.create_buffers()
+            self.curve_spheres.add_instance(Transform3D())
+
+        # If snake moved, update MVP buffer
+        head_location = self.snake.head.pos
+        if head_location != self.head_location:
+            self.head_location = head_location
+            needs_update = True
+
+        if needs_update:
+            self.first_update = False
+
+            new_translation = Scene.grid_position(*head_location, board_width, board_height)
+            self.transform.translation = new_translation
+            self.head_transform.translation = new_translation
+
+            model = self.transform.transformation_matrix
+            mvp = view_proj * model
+            normal_mat = Matrix33(model.inverse.T, dtype='f4').copy()
+
+            self.mvp_buffer.write(mvp)
+            self.model_buffer.write(model)
+            self.normal_mat_buffer.write(normal_mat)
+
+            self.create_tail(board_width, board_height)
+            self.curve_spheres.update(view_proj)
+
+            self.update_head_scale()
+            self.head.update(view_proj)
+
+            self.eyes.transforms = self.get_eye_transforms()
+            self.eyes.update(view_proj)
+
+    def render(self, override_program: Optional[ShaderProgram]=None) -> None:
+        body_program = override_program if override_program else self.body_program
+        if body_program.name == 'shadow_map_depth':
+            body_program = self.body_shadow_map_prog
+
+        # If the snake grew, we need to clear the vao instance from self.tail because it caches the
+        # buffers. If we don't clear it, the snake tail doesn't render longer than the start length
+        if self.clear_vao_instance[body_program]:
+            glo = body_program.program.glo
+            if glo in self.tail.vaos:
+                del self.tail.vaos[glo]
+            self.clear_vao_instance[body_program] = False
+
+        self.body_program.set_uniform_value('specularStrength', 0.1)
+        self.body_program.set_uniform_value('in_color', self.color)
+
+        self.tail.render(body_program.program, mode=moderngl.LINE_STRIP)
+
+        self.curve_spheres.render(
+            override_program=override_program, value_uniforms={
+                'specularStrength': 0.1, 'is_light_source': False
+            }
+        )
+
+        self.head.render(
+            override_program=override_program, value_uniforms={
+                'specularStrength': 0.1, 'is_light_source': False
+            }
+        )
+        self.eyes.render(
+            override_program=override_program ,value_uniforms={
+                'specularStrength': 1.0, 'is_light_source': False
+            }
         )
 
 
@@ -885,7 +1105,7 @@ class HDRBloomRenderer(Renderable):
 
 
 class Scene(Renderable):
-    def __init__(self, game: Game, theme: Theme, aspect_ratio: float=16 / 9):
+    def __init__(self, game: Game, theme: Theme, tapered_snake: bool, aspect_ratio: float=16 / 9):
         ctx = mglw.ctx()
 
         self.aspect_ratio = aspect_ratio
@@ -926,7 +1146,10 @@ class Scene(Renderable):
         self.wall_renderer = WallRenderer(game, theme)
 
         # Create snake
-        self.snake_renderer = SnakeRenderer(game, theme)
+        if tapered_snake:
+            self.snake_renderer = TaperedSnakeRenderer(game, theme)
+        else:
+            self.snake_renderer = SnakeRenderer(game, theme)
 
         # Create food
         self.food_renderer = FoodRenderer(game, theme)
@@ -940,8 +1163,11 @@ class Scene(Renderable):
         prog = state.shader_program_repo['shadow_map_depth'].program
         prog['LightSpaceMatrix'].binding = 4
 
+        prog = state.shader_program_repo['snake_procedural_shadow_map_depth'].program
+        prog['LightSpaceMatrix'].binding = 4
+
         self.scope = ctx.scope(
-            None, moderngl.DEPTH_TEST | moderngl.CULL_FACE, uniform_buffers=[
+            None, moderngl.DEPTH_TEST, uniform_buffers=[
                 (self.light.pos_buffer, 1),
                 (self.light.color_buffer, 2),
                 (self.camera_pos_buffer, 3),
