@@ -20,7 +20,7 @@ void main() {
 #define PI 3.14159
 
 layout (lines) in;
-layout (triangle_strip, max_vertices = 32) out;
+layout (triangle_strip, max_vertices = 72) out;
 
 uniform LightSpaceMatrix {
     mat4 matrix;
@@ -44,7 +44,7 @@ vec3 createPerp(vec3 p1, vec3 p2)
 }
 
 void createTube(vec3 pos1, vec3 pos2, float r1, float r2) {
-    const int segs = 16;
+    const int segs = 36;
 
     vec3 axis = normalize(pos2.xyz - pos1.xyz);
 
