@@ -2,7 +2,6 @@
 #    - Shader to give snake scales?
 #    - When adding instances, grow buffers rather than just deleting and recreating;
 #      see moderngl example growing_buffers.py
-#    - Switch text rendering to generating quads using a geometry shader
 
 import math
 from collections import defaultdict
@@ -232,6 +231,8 @@ class FontBook(MappingABC):
 #    - Horizontal alignment
 #    - Controllable line spacing
 class TextRenderer(Renderable):
+    instance_number = 0
+
     def __init__(self, font: Font, text: str, color: Color, x: float, y: float, which_point: str='topleft'):
         self.program = state.shader_program_repo['font']
         self.font = font
@@ -239,14 +240,20 @@ class TextRenderer(Renderable):
         self.color = color.r / 255, color.g / 255, color.b / 255
         self.x = x
         self.y = y
-        self.vaos = []
-        self.backup_vaos = []
-        self._text = self._previous_text = ''
+
+        self.position_buffer = None
+        self.texture_coords_buffer = None
+        self.num_renderable_chars = 0
+        self.first_update = True
+        self.vao = VAO(f'text_renderer_{TextRenderer.instance_number}')
+
+        self._text = ''
         self.text = text
 
+        TextRenderer.instance_number += 1
+
     def __del__(self):
-        for vao in chain(self.vaos, self.backup_vaos):
-            vao.release()
+        self.vao.release()
 
     @property
     def text(self) -> str:
@@ -254,18 +261,40 @@ class TextRenderer(Renderable):
 
     @text.setter
     def text(self, new_text: str) -> None:
-        self._previous_text = self._text
-        self._text = new_text
+        if self._text != new_text:
+            self._text = new_text
 
-        # Set width and height of text area
-        rows = self._text.replace('\t', ' ' * 4).split('\n')
-        self.width = max(len(row) for row in rows) * self.font.char_width
-        self.height = len(rows) * self.font.char_height
+            renderable_characters = self._text.replace('\t', ' ' * 4)
+            num_renderable_chars = len(renderable_characters)
+            if num_renderable_chars != self.num_renderable_chars:
+                self.num_renderable_chars = num_renderable_chars
 
-        self.create_vaos_and_buffer_data()
+                glo = self.program.program.glo
+                if glo in self.vao.vaos:
+                    del self.vao.vaos[glo]
 
-    def previous_text_at_index(self, index: int):
-        return self._previous_text[index] if index < len(self._previous_text) else ''
+                self.create_buffers()
+
+            # Set width and height of text area
+            rows = renderable_characters.split('\n')
+            self.width = max(len(row) for row in rows) * self.font.char_width
+            self.height = len(rows) * self.font.char_height
+
+            self.update_buffers()
+
+    def create_buffers(self) -> None:
+        ctx = mglw.ctx()
+        length = self.num_renderable_chars
+
+        if self.position_buffer:
+            self.position_buffer.orphan(4 * 2 * length)
+        else:
+            self.position_buffer = ctx.buffer(reserve=4 * 2 * length)
+
+        if self.texture_coords_buffer:
+            self.texture_coords_buffer.orphan(4 * 2 * length)
+        else:
+            self.texture_coords_buffer = ctx.buffer(reserve=4 * 2 * length)
 
     def get_position_offset(self) -> Tuple[float, float]:
         which_point = self.which_point
@@ -295,50 +324,35 @@ class TextRenderer(Renderable):
             ' bottomleft, midbottom, bottomright'
         ]))
 
-    def create_vaos_and_buffer_data(self):
-        while len(self.text) < len(self.vaos):
-            self.backup_vaos.append(self.vaos.pop())
-
+    def update_buffers(self) -> None:
         offsets, texture_coords = self.get_offsets_and_texture_coords()
 
-        special_char_counter = 0
-        for i in range(len(self.text)):
-            # If needed, try to pull a backup VAO into self.vaos so we don't have to crate a new VAO
-            if i >= len(self.vaos) and len(self.backup_vaos):
-                self.vaos.append(self.backup_vaos.pop())
+        self.position_buffer.write(offsets)
+        self.texture_coords_buffer.write(texture_coords)
 
-            if self.text[i] == '\n' or self.text[i] == '\t':
-                special_char_counter += 1
-            # If the character at index i changed, update the relevant VAO
-            elif self.text[i] != self.previous_text_at_index(i):
-                i = i - special_char_counter
-                # If there is enough VAOs in self.vaos and a character has changed, update the buffers,
-                # otherwise create a new VAO.
-                if i < len(self.vaos):
-                    self.vaos[i].get_buffer_by_name('in_offset').buffer.write(offsets[i])
-                    self.vaos[i].get_buffer_by_name('in_texcoord_0').buffer.write(texture_coords[i])
-                else:
-                    vao = geom.quad_2d(
-                        uvs=False, normals=False, size=(self.font.char_width, self.font.char_height),
-                        pos=(self.font.char_width / 2, -self.font.char_height / 2)
-                    )
-                    vao.buffer(offsets[i], '2f/r', ['in_offset'])
-                    vao.buffer(texture_coords[i], '2f/v', ['in_texcoord_0'])
-                    self.vaos.append(vao)
+        if self.first_update:
+            self.first_update = False
+            self.vao.buffer(self.position_buffer, '2f/v', ['in_position'])
+            self.vao.buffer(self.texture_coords_buffer, '2f/v', ['in_texcoord_0'])
 
-    def get_offsets_and_texture_coords(self) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        self.vao.vertex_count = self.num_renderable_chars
+        self.vao.get_buffer_by_name('in_position').vertices = self.num_renderable_chars
+        self.vao.get_buffer_by_name('in_texcoord_0').vertices = self.num_renderable_chars
+
+    def get_offsets_and_texture_coords(self) -> Tuple[np.ndarray, np.ndarray]:
         font = self.font
         width = font.char_width
         height = font.char_height
         dx = width / font.texture_width
         dy = height / font.texture_height
 
+        length = 2 * self.num_renderable_chars
         start_x, start_y = self.get_position_offset()
-        texture_coords = []
-        offsets = []
+        offsets = np.zeros(length, dtype='f4')
+        texture_coords = np.zeros(length, dtype='f4')
         x_offset = 0
         y_offset = 0
-        for char in self.text:
+        for char, idx in zip(self.text, range(0, length, 2)):
             i = ord(char)
             x, y = i % 16, 9 - i // 16 - 2
 
@@ -348,17 +362,10 @@ class TextRenderer(Renderable):
             elif char == '\t':
                 x_offset += 4 * font.char_width
             elif 32 <= i < 128:
-                offsets.append(
-                    np.array([start_x + x_offset, start_y - y_offset], dtype='f4')
-                )
-                texture_coords.append(np.array([
-                     x      * dx, (y + 1) * dy,
-                     x      * dx,  y      * dy,
-                    (x + 1) * dx,  y      * dy,
-                     x      * dx, (y + 1) * dy,
-                    (x + 1) * dx,  y      * dy,
-                    (x + 1) * dx, (y + 1) * dy
-                ], dtype='f4'))
+                offsets[idx] = start_x + x_offset
+                offsets[idx + 1] = start_y - y_offset
+                texture_coords[idx] = x * dx
+                texture_coords[idx + 1] = y * dy
                 x_offset += font.char_width
 
         return offsets, texture_coords
@@ -367,10 +374,15 @@ class TextRenderer(Renderable):
         self.program.write_uniform('projection', proj)
         self.program.set_uniform_value('text_color', self.color)
 
+        font = self.font
+        self.program.set_uniform_value('charWidth', font.char_width)
+        self.program.set_uniform_value('charHeight', font.char_height)
+        self.program.set_uniform_value('textureWidth', font.texture_width)
+        self.program.set_uniform_value('textureHeight', font.texture_height)
+
         self.font.texture.use(location=0)
 
-        for vao in self.vaos:
-            vao.render(self.program.program)
+        self.vao.render(self.program.program, mode=moderngl.POINTS)
 
 
 class InstancedObject(Renderable):
