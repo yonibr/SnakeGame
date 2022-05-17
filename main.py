@@ -31,6 +31,8 @@ key_dir_map = {
     'right': Direction.right()
 }
 
+run_control_thread = False
+
 
 def is_valid_direction(direction: Direction) -> bool:
     if len(state.direction_queue) == 0:
@@ -99,7 +101,7 @@ def loop(game: Game) -> bool:
 random_counter = 0
 
 
-def rl_loop(env: 'Env', model) -> bool: # TODO provide type hint for model
+def rl_loop(env: 'Env', model) -> bool:  # TODO provide type hint for model
     # action = env.action_space.sample()
     # obs, reward, done, info = env.step(action)
 

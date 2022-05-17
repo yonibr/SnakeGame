@@ -3,7 +3,7 @@
 
 import argparse
 
-from typing import Dict, List, Sequence, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import state
 
@@ -109,7 +109,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(taper_opengl=False)
 
 
-def parse_args() -> Tuple[List[int], Dict[str, Union[bool, str]], Dict[str, Union[float, int, str]]]:
+def parse_args() -> Tuple[List[Union[int, str]], Dict[str, Union[bool, str]], Dict[str, Union[float, int, str]]]:
     from renderers import config_defaults, renderers
 
     parser = argparse.ArgumentParser()

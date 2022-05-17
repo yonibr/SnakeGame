@@ -138,11 +138,10 @@ def update_high_scores(game: Game, check_top_n: int=5) -> bool:
         high_score = (
             (lowest_high_score.score < score) or
             (
-                (lowest_high_score.score == score and
-                lowest_high_score.length < length)
+                lowest_high_score.score == score and lowest_high_score.length < length
             )
         )
-    except:
+    except FileNotFoundError:
         score_df = pd.DataFrame(data=row, index=[0])
         high_score = True
 
@@ -151,7 +150,7 @@ def update_high_scores(game: Game, check_top_n: int=5) -> bool:
     return high_score
 
 
-def get_high_scores(top_n: int=5) -> Tuple[List[int], List[int]]:
+def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str]]:
     high_scores_df = get_same_param_score_df(pd.read_parquet(f'scores.parquet')).head(top_n)
 
     return (

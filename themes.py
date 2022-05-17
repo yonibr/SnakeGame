@@ -1,8 +1,8 @@
 from collections import namedtuple
-from typing import Tuple
 
 
 Color = namedtuple('Color', ['r', 'g', 'b'])
+
 
 class Theme(object):
     def __init__(

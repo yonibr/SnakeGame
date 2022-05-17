@@ -223,7 +223,6 @@ class PGRenderer(Renderer):
         return dirty_rects
 
     def draw_fps(self) -> pg.Rect:
-        # fps_text = f'FPS: {self.clock.get_fps(): 0.1f}'
         return self.draw_text(
             f'FPS: {self.fps: 0.1f}', (6, 6), 'topleft', 22, self.theme.text
         )[0]
@@ -768,7 +767,7 @@ class PGRenderer3(PGRenderer2):
             end_scale: int,
             center_point: Tuple[int, int],
             connecting_point: Tuple[int, int],
-            points: int=20 ) -> List[Tuple[int, int]]:
+            points: int=20) -> List[Tuple[int, int]]:
         r = np.linspace(start_scale, end_scale, points)
         t = np.linspace(start_angle, end_angle, points)
         x = r * np.cos(t) + center_point[0]
@@ -863,8 +862,8 @@ class PGRenderer3(PGRenderer2):
     def get_polygons(self, snake: Snake) -> List[List[Tuple[int, int]]]:
         decrease_factor = self.scale_factor / 2 / len(snake.nodes)
 
-        get_unchanged = lambda c: (c) * self.scale_factor
-        get_decreased = lambda c, i, s: (c) * self.scale_factor + s * decrease_factor * i
+        get_unchanged = lambda c: c * self.scale_factor
+        get_decreased = lambda c, d, s: c * self.scale_factor + s * decrease_factor * d
 
         polygons = []
         joining_polygons = []
@@ -1038,7 +1037,7 @@ if platform.system() != 'Windows':
             self.width = game.board_width
             self.debug_text = []
 
-        def render(self, game: Game) -> None: # TODO make this work when colors don't work
+        def render(self, game: Game) -> None:  # TODO make this work when colors don't work
             width = self.width
 
             wall_nodes = set(game.level.wall_nodes)
@@ -1117,10 +1116,10 @@ if platform.system() != 'Windows':
                 elapsed_time = self.track_fps()
 
                 # Note: it seems like this doesn't always sleep long enough (at least on the
-                # mac computer I'm testing on, python 3.6). I think it's due to the timer not
+                # Mac computer I'm testing on, python 3.6). I think it's due to the timer not
                 # precisely measuring how much time has elapsed (overestimating). I get the
                 # proper FPS if I require it to sleep for 16ms, but I don't want to
-                # artificially lower FPS on slower computers. So, my options seem to be require
+                # artificially lower FPS on slower computers. So, my options seem to be requiring
                 # python 3.7 and use nanosecond precision or accept that the update rate may be
                 # higher than 60fps. For now, I'll do the latter.
                 curses.napms(max(0, 17 - int(elapsed_time * 1000)))
@@ -1142,7 +1141,10 @@ if platform.system() != 'Windows':
 
             start_y = self.height // 2
 
-            self.draw_str(' Score | Length ', self.width // 2 - 7, start_y, self.text_color, game, options=curses.A_UNDERLINE)
+            self.draw_str(
+                ' Score | Length ', self.width // 2 - 7, start_y, self.text_color, game,
+                options=curses.A_UNDERLINE
+            )
             for score, length, i in zip(scores, lengths, range(1, len(scores) + 1)):
                 x = self.width // 2 - len(score) - 1
                 self.draw_str(f'{score} | {length}', x, start_y + i, self.text_color, game)
@@ -1160,7 +1162,7 @@ if platform.system() != 'Windows':
             str_len = len(s)
             for x, i in zip(range(start_x, start_x + str_len), range(str_len)):
                 if self.use_colors:
-                    if (x, y)  in snake_points:
+                    if (x, y) in snake_points:
                         bg_color = self.snake_color
                     elif (x, y) in wall_points:
                         bg_color = self.wall_color
@@ -1263,7 +1265,7 @@ if platform.system() != 'Windows':
 class OpenGLRenderer(mglw.WindowConfig, Renderer):
     title = 'Snake'
     gl_version = (3, 3)
-    window_size = (1920, 1080)
+    window_size = (1728, 972)
     aspect_ratio = window_size[0] / window_size[1]
     resizable = True
     samples = 8
@@ -1414,13 +1416,13 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     def draw_game_over_text(self):
         # We want to skip one rendering cycle before drawing game over and the high
         # scores because saving/reading the high scores takes a bit
-            if not self.game_over_renderer:
-                text = game_over_text(self.game, update_high_scores(self.game))
-                self.game_over_renderer = TextRenderer(
-                    self.font, text, self.theme.text, self.viewport_width / 2,
-                    self.viewport_height * 0.7, which_point='midbottom'
-                )
-            self.game_over_renderer.render(self.orthogonal_proj)
+        if not self.game_over_renderer:
+            text = game_over_text(self.game, update_high_scores(self.game))
+            self.game_over_renderer = TextRenderer(
+                self.font, text, self.theme.text, self.viewport_width / 2,
+                self.viewport_height * 0.7, which_point='midbottom'
+            )
+        self.game_over_renderer.render(self.orthogonal_proj)
 
     def draw_high_scores(self, top_n=5) -> None:
         if not self.high_scores_renderer:

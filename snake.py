@@ -131,16 +131,16 @@ class NodeCollection(object):
         return self.nodes[item]
 
 
+# TODO: pathfinding to place snake not in a straight line if necessary
 class Snake(NodeCollection):
     def __init__(self, start_x: int, start_y: int, start_length: int):
-        self.head = Node(start_x, start_y, '@')
-        self.nodes = [self.head]
+        positions = [(start_x - i, start_y) for i in range(start_length)]
+        markers = ['@', *'#' * (start_length - 1)]
+        super().__init__(positions, markers)
+
+        self.head = self[0]
         self.node_queue = []
         self.direction = Direction.right()
-
-        # TODO: pathfinding to place snake not in a straight line if necessary
-        for i in range(1, start_length):
-            self.nodes.append(Node(start_x - i, start_y, '#'))
 
     def __len__(self) -> int:
         return super().__len__() + len(self.node_queue)
@@ -266,10 +266,10 @@ class Level(object):
 
         def get_cell_accessibility(m):
             accessibility = [[0] * width for _ in range(height)]
-            for x, y in itertools.product(range(len(m[0])), range(len(m))):
-                if not m[y][x]:
-                    for nx, ny in self.get_neighbors(x, y):
-                        accessibility[y][x] += not m[ny][nx]
+            for cx, cy in itertools.product(range(len(m[0])), range(len(m))):
+                if not m[cy][cx]:
+                    for nx, ny in self.get_neighbors(cx, cy):
+                        accessibility[cy][cx] += not m[ny][nx]
             return accessibility
 
         cell_accessibility = get_cell_accessibility(mask)

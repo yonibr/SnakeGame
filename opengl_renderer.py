@@ -257,7 +257,7 @@ class TextRenderer(Renderable):
         self._previous_text = self._text
         self._text = new_text
 
-        # Set width and hight of text area
+        # Set width and height of text area
         rows = self._text.replace('\t', ' ' * 4).split('\n')
         self.width = max(len(row) for row in rows) * self.font.char_width
         self.height = len(rows) * self.font.char_height
@@ -979,7 +979,7 @@ class TaperedSnakeRenderer(Renderable):
             }
         )
         self.eyes.render(
-            override_program=override_program ,value_uniforms={
+            override_program=override_program, value_uniforms={
                 'specularStrength': 1.0, 'is_light_source': False
             }
         )
