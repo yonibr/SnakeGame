@@ -17,6 +17,7 @@ import subprocess
 import time
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from enum import auto, Enum
 from moderngl_window import geometry as geom
 from pygame import gfxdraw, surfarray
@@ -1265,10 +1266,11 @@ if platform.system() != 'Windows':
 class OpenGLRenderer(mglw.WindowConfig, Renderer):
     title = 'Snake'
     gl_version = (3, 3)
-    window_size = (1728, 972)
-    aspect_ratio = window_size[0] / window_size[1]
+    window_size = (1920, 1080)
+    aspect_ratio = None
     resizable = True
-    samples = 8
+    vsync = True
+    samples = 0
 
     resource_dir = os.path.normpath(os.path.join(__file__, '../resources'))
 
@@ -1276,6 +1278,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         super().__init__(**kwargs)
         Renderer.__init__(self)
         self.wnd.config = self
+        self.wnd.fullscreen_key = self.wnd.keys.F
         self.high_score_vert_line = None
         self.high_score_horiz_line = None
         self.font = None
@@ -1299,8 +1302,17 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.draw_game_over = False
         self.eating_sound = None
 
-        print(self.argv)
+        self.recreate_text_renderer = defaultdict(lambda: True)
         self.initialize(state.game, **vars(self.argv))
+
+        display = pyglet.canvas.Display()
+        screen = display.get_default_screen()
+        self.fullscreen_width = screen.width
+        self.fullscreen_height = screen.height
+
+        # If the renderer is created in full-screen, we want to make sure the size is set properly
+        if self.fullscreen:
+            self.resize(self.fullscreen_width, self.fullscreen_height)
 
         # Note: after we finish rendering the first frame, set state.run to true. We do it in the
         # renderer instead of in main because startup can take a while.
@@ -1324,11 +1336,24 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             )
 
         self.scene = Scene(
-            self.game, self.theme, kw_args['taper_opengl'], aspect_ratio=self.aspect_ratio
+            self.game, self.theme, kw_args['taper_opengl'],
+            aspect_ratio=self.window_size[0] / self.window_size[1]
         )
         self.font_book = FontBook()
 
-        self.viewport_width,  self.viewport_height = get_viewport_dimensions()
+        self.update_viewport()
+
+        self.font = self.font_book['SFNSMono', 64]
+
+    def key_event(self, key, action, modifiers):
+        if action in {self.wnd.keys.ACTION_PRESS, self.wnd.keys.ACTION_RELEASE}:
+            handle_input(parse_key(key, 'pyglet'), action == self.wnd.keys.ACTION_RELEASE)
+
+        if action == self.wnd.keys.ACTION_RELEASE and key == self.wnd.keys.F:
+            self.toggle_fullscreen()
+
+    def update_viewport(self):
+        self.viewport_width, self.viewport_height = get_viewport_dimensions()
 
         self.orthogonal_proj = Matrix44.orthogonal_projection(
             0,  # left
@@ -1340,11 +1365,19 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             dtype='f4'
         )
 
-        self.font = self.font_book['SFNSMono', 64]
+        self.recreate_text_renderer.clear()
 
-    def key_event(self, key, action, modifiers):
-        if action in {self.wnd.keys.ACTION_PRESS, self.wnd.keys.ACTION_RELEASE}:
-            handle_input(parse_key(key, 'pyglet'), action == self.wnd.keys.ACTION_RELEASE)
+    def resize(self, width: int, height: int) -> None:
+        super().resize(width, height)
+
+        self.update_viewport()
+        self.scene.resize(width / height)
+
+    def toggle_fullscreen(self) -> None:
+        if self.wnd.fullscreen:
+            self.resize(self.fullscreen_width, self.fullscreen_height)
+        else:
+            self.resize(*self.window_size)
 
     def render(self, run_time: float, frame_time: float):
         self.elapsed_time += frame_time
@@ -1359,7 +1392,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             if self.eating_sound:
                 self.eating_sound.play()
 
-        self.ctx.clear(*self.background_color)
+        self.ctx.clear()
         self.scene.render(run_time, frame_time)
         self.ctx.enable(moderngl.BLEND)
         self.draw_all_text()
@@ -1375,40 +1408,44 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         pass
 
     def draw_fps(self) -> None:
-        if not self.fps_renderer:
+        if not self.fps_renderer or self.recreate_text_renderer['fps']:
             self.fps_renderer = TextRenderer(
                 self.font, f'FPS: {self.fps: 0.1f}', self.theme.text, 10, self.viewport_height - 10
             )
+            self.recreate_text_renderer['fps'] = False
         else:
             self.fps_renderer.text = f'FPS: {self.fps: 0.1f}'
         self.fps_renderer.render(self.orthogonal_proj)
 
     def draw_score(self, score: int) -> None:
-        if not self.score_renderer:
+        if not self.score_renderer or self.recreate_text_renderer['score']:
             self.score_renderer = TextRenderer(
                 self.font, f'Score: {score}', self.theme.text, self.viewport_width / 2,
                 self.viewport_height - 10, which_point='midtop'
             )
+            self.recreate_text_renderer['score'] = False
         else:
             self.score_renderer.text = f'Score: {score}'
         self.score_renderer.render(self.orthogonal_proj)
 
     def draw_length(self, length: int) -> None:
-        if not self.length_renderer:
+        if not self.length_renderer or self.recreate_text_renderer['length']:
             self.length_renderer = TextRenderer(
                 self.font, f'Length: {length}', self.theme.text, self.viewport_width - 10,
                 self.viewport_height - 10, which_point='topright'
             )
+            self.recreate_text_renderer['length'] = False
         else:
             self.length_renderer.text = f'Length: {length}'
         self.length_renderer.render(self.orthogonal_proj)
 
     def draw_level_name(self) -> None:
-        if not self.level_renderer:
+        if not self.level_renderer or self.recreate_text_renderer['level']:
             self.level_renderer = TextRenderer(
                 self.font, f'Level: {state.level_name}', self.theme.text, self.viewport_width / 2,
                 10, which_point='midbottom'
             )
+            self.recreate_text_renderer['level'] = False
         else:
             self.level_renderer.text = f'Level: {state.level_name}'
         self.level_renderer.render(self.orthogonal_proj)
@@ -1416,12 +1453,13 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     def draw_game_over_text(self):
         # We want to skip one rendering cycle before drawing game over and the high
         # scores because saving/reading the high scores takes a bit
-        if not self.game_over_renderer:
+        if not self.game_over_renderer or self.recreate_text_renderer['game_over']:
             text = game_over_text(self.game, update_high_scores(self.game))
             self.game_over_renderer = TextRenderer(
                 self.font, text, self.theme.text, self.viewport_width / 2,
                 self.viewport_height * 0.7, which_point='midbottom'
             )
+            self.recreate_text_renderer['game_over'] = False
         self.game_over_renderer.render(self.orthogonal_proj)
 
     def draw_high_scores(self, top_n=5) -> None:
@@ -1434,10 +1472,12 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
                 '\n'.join(map('  '.join, zip(scores, lengths)))
             ])
 
-            self.high_scores_renderer = TextRenderer(
-                self.font, text, self.theme.text, self.viewport_width / 2,
-                self.viewport_height * 0.4, which_point='midtop'
-            )
+            if not self.high_scores_renderer or self.recreate_text_renderer['high_scores']:
+                self.high_scores_renderer = TextRenderer(
+                    self.font, text, self.theme.text, self.viewport_width / 2,
+                    self.viewport_height * 0.4, which_point='midtop'
+                )
+                self.recreate_text_renderer['high_scores'] = False
 
             self.high_score_horiz_line = InstancedObject(
                 1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],

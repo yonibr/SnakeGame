@@ -4,19 +4,19 @@
 #      see moderngl example growing_buffers.py
 
 import math
-from collections import defaultdict
-
 import moderngl
 import moderngl_window as mglw
 import numpy as np
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Mapping as MappingABC
 from freetype import Face, FT_LOAD_FORCE_AUTOHINT, FT_LOAD_RENDER
 from itertools import chain
 from moderngl_window import geometry as geom
 from moderngl_window.opengl.vao import VAO
 from pyrr import Matrix33, Matrix44, Vector3
+from threading import Lock
 from typing import Any, Callable, Mapping, List, Optional, Sequence, Tuple
 
 import state
@@ -536,17 +536,14 @@ class Light(Renderable):
             vao_generator_kwargs={'radius': radius, 'sectors': 64, 'rings': 64}
         )
 
-        self.should_update = True
-
     def __del__(self):
         self.pos_buffer.release()
         self.color_buffer.release()
         self.view_proj_buffer.release()
 
-    def update(self, view_proj: Matrix44) -> None:
-        if self.should_update:
+    def update(self, view_proj: Matrix44, force_update: bool=False) -> None:
+        if force_update:
             self.sphere.update(view_proj)
-            self.should_update = False
 
     def render(self):
         self.sphere.render(value_uniforms={
@@ -577,8 +574,6 @@ class SnakeRenderer(Renderable):
             vao_generator_kwargs={'radius': 0.25}
         )
 
-        self.first_update = True
-
     def get_eye_transforms(self) -> List[Transform3D]:
         direction = self.snake.direction.name
 
@@ -604,8 +599,9 @@ class SnakeRenderer(Renderable):
             self,
             view_proj: Matrix44,
             board_width: int,
-            board_height: int) -> None:
-        needs_update = self.first_update
+            board_height: int,
+            force_update: bool=False) -> None:
+        needs_update = force_update
 
         # If snake grew, create new buffers since there are more instances
         current_length = len(self.snake.nodes)
@@ -633,8 +629,6 @@ class SnakeRenderer(Renderable):
 
             self.eyes.transforms = self.get_eye_transforms()
             self.eyes.update(view_proj)
-
-            self.first_update = False
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.body.render(
@@ -666,10 +660,13 @@ class WallRenderer(Renderable):
             vao_generator_kwargs={'size': (2.0, 2.0, 2.0)}
         )
 
-        self.first_update = True
-
-    def update(self, view_proj: Matrix44, board_width: int, board_height: int) -> None:
-        needs_update = self.first_update
+    def update(
+            self,
+            view_proj: Matrix44,
+            board_width: int,
+            board_height: int,
+            force_update: bool=False) -> None:
+        needs_update = force_update
 
         # If a wall moved, update the transform
         for i, wall in enumerate(self.walls):
@@ -682,8 +679,6 @@ class WallRenderer(Renderable):
 
         if needs_update:
             self.instanced_cube.update(view_proj)
-
-            self.first_update = False
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.instanced_cube.render(
@@ -702,11 +697,14 @@ class FoodRenderer(Renderable):
             vao_generator_kwargs={'radius': 0.9}
         )
 
-        self.first_update = True
-
-    def update(self, view_proj: Matrix44, board_width: int, board_height: int) -> None:
+    def update(
+            self,
+            view_proj: Matrix44,
+            board_width: int,
+            board_height: int,
+            force_update: bool=False) -> None:
         food_pos = self.game.food.pos
-        needs_update = self.food_pos != food_pos or self.first_update
+        needs_update = self.food_pos != food_pos or force_update
 
         if needs_update:
             # Update food position
@@ -715,8 +713,6 @@ class FoodRenderer(Renderable):
                 *food_pos, board_width, board_height
             )
             self.sphere.update(view_proj)
-
-            self.first_update = False
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.sphere.render(
@@ -759,12 +755,10 @@ class BoardRenderer(Renderable):
         )
         self.floor = InstancedObject(1, geom.quad_2d, 'lighting', theme.background, [transforms])
 
-        self.should_update = True
-
-    def update(self, view_proj: Matrix44) -> None:
+    def update(self, view_proj: Matrix44, force_update: bool=False) -> None:
         # Set the view projection matrix in the floor and the grid, which only needs to happen once
-        if self.should_update:
-            self.should_update = False
+        # per time the projection changes
+        if force_update:
             self.floor.update(view_proj)
             self.grid.update(view_proj)
 
@@ -785,7 +779,6 @@ class TaperedSnakeRenderer(Renderable):
         self.head_location = self.snake.head.pos
         self.snake_length = len(self.snake)
         self.color = theme.snake.r / 255, theme.snake.g / 255, theme.snake.b / 255
-        self.first_update = True
 
         # Because VAO instances are cached internally in mglw.vao, we need to force# it to
         # regenerate the instance when the buffers grow
@@ -808,6 +801,7 @@ class TaperedSnakeRenderer(Renderable):
             vao_generator_kwargs={'radius': 0.95}
         )
 
+        self.first_update = True
         self.mvp_buffer = None
         self.model_buffer = None
         self.normal_mat_buffer = None
@@ -884,6 +878,7 @@ class TaperedSnakeRenderer(Renderable):
         if self.first_update:
             self.tail = VAO('tail')
             self.tail.buffer(self.body_buffer, '4f', ['in_position'])
+            self.first_update = False
         self.tail.vertex_count = body.shape[0]
         self.tail.get_buffer_by_name('in_position').vertices = body.shape[0]
         self.clear_vao_instance.clear()
@@ -920,8 +915,13 @@ class TaperedSnakeRenderer(Renderable):
         else:
             self.body_buffer = ctx.buffer(reserve=4 * 4 * length)
 
-    def update(self, view_proj: Matrix44, board_width: int, board_height: int) -> None:
-        needs_update = self.first_update
+    def update(
+            self,
+            view_proj: Matrix44,
+            board_width: int,
+            board_height: int,
+            force_update: bool=False) -> None:
+        needs_update = force_update
 
         # If snake grew, create new buffers since there are more instances
         current_length = len(self.snake.nodes)
@@ -938,8 +938,6 @@ class TaperedSnakeRenderer(Renderable):
             needs_update = True
 
         if needs_update:
-            self.first_update = False
-
             new_translation = Scene.grid_position(*head_location, board_width, board_height)
             self.transform.translation = new_translation
             self.head_transform.translation = new_translation
@@ -1120,7 +1118,12 @@ class Scene(Renderable):
     def __init__(self, game: Game, theme: Theme, tapered_snake: bool, aspect_ratio: float=16 / 9):
         ctx = mglw.ctx()
 
-        self.aspect_ratio = aspect_ratio
+        # Create a lock to avoid race conditions when the screen is resized in case the OpenGL
+        # windowing library listens for key presses on a different thread than it renders from.
+        # When this was written, pyglet didn't do that, but I might as well do this in case that
+        # changes or if I switch to a different windowing library.
+        self.resize_lock = Lock()
+
         self.theme = theme
         self.game = game
         self.board_width = game.board_width
@@ -1131,13 +1134,12 @@ class Scene(Renderable):
         # Create camera and associated view and projection matrices
         self.camera_pos = 0.0, max_dim * 2.25, max_dim * 2.1
         self.camera_pos_buffer = ctx.buffer(Vector3(self.camera_pos, dtype='f4'))
-        self.proj = Matrix44.perspective_projection(
-            45.0, self.aspect_ratio, 0.1, self.camera_pos[2] * 2, dtype='f4'
-        )
-        self.view = Matrix44.look_at(
-            self.camera_pos, (0, 0, 0), (0, 1, 0), dtype='f4'
-        )
-        self.view_proj = self.proj * self.view
+
+        self.view = None
+        self.proj = None
+        self.view_proj = None
+        self.update_view_proj(aspect_ratio)
+        self.force_update = True
 
         # Create shadow map
         self.shadow_map = ShadowMap()
@@ -1148,11 +1150,9 @@ class Scene(Renderable):
             Vector3(light_pos, dtype='f4'), Color(255, 255, 255), self.board_width, self.board_height,
             radius=max_dim / 4
         )
-        self.light.update(self.view_proj)
 
         # Create board
         self.board_renderer = BoardRenderer(self.board_width, self.board_height, theme)
-        self.board_renderer.update(self.view_proj)
 
         # Create walls
         self.wall_renderer = WallRenderer(game, theme)
@@ -1199,6 +1199,21 @@ class Scene(Renderable):
     def __del__(self):
         self.camera_pos_buffer.release()
 
+    def update_view_proj(self, aspect_ratio: float) -> None:
+        self.proj = Matrix44.perspective_projection(
+            45.0, aspect_ratio, 0.1, self.camera_pos[2] * 2, dtype='f4'
+        )
+        self.view = Matrix44.look_at(
+            self.camera_pos, (0, 0, 0), (0, 1, 0), dtype='f4'
+        )
+        self.view_proj = self.proj * self.view
+
+    def resize(self, aspect_ratio: float) -> None:
+        with self.resize_lock:
+            self.update_view_proj(aspect_ratio)
+            self.hdr_bloom_renderer = HDRBloomRenderer()
+            self.force_update = True
+
     @staticmethod
     def grid_position(x: int, y: int, width: int, height: int) -> Vector3:
         return Vector3(
@@ -1206,9 +1221,19 @@ class Scene(Renderable):
         )
 
     def update(self) -> None:
-        self.snake_renderer.update(self.view_proj, self.board_width, self.board_height)
-        self.wall_renderer.update(self.view_proj, self.board_width, self.board_height)
-        self.food_renderer.update(self.view_proj, self.board_width, self.board_height)
+        with self.resize_lock:
+            self.snake_renderer.update(
+                self.view_proj, self.board_width, self.board_height, force_update=self.force_update
+            )
+            self.wall_renderer.update(
+                self.view_proj, self.board_width, self.board_height, force_update=self.force_update
+            )
+            self.food_renderer.update(
+                self.view_proj, self.board_width, self.board_height, force_update=self.force_update
+            )
+            self.board_renderer.update(self.view_proj, force_update=self.force_update)
+            self.light.update(self.view_proj, force_update=self.force_update)
+            self.force_update = False
 
     def render(self, time: float, frame_time: float) -> None:
         self.update()
