@@ -1,7 +1,5 @@
 # TODO:
 #    - Shader to give snake scales?
-#    - When adding instances, grow buffers rather than just deleting and recreating;
-#      see moderngl example growing_buffers.py
 
 import math
 import moderngl
@@ -413,41 +411,46 @@ class InstancedObject(Renderable):
         self.transforms = transforms
 
         self.vao = None
-        self.instance_models = None
-        self.instance_mvps = None
-        self.instance_normal_mats = None
-        self.instance_texture_coords = None
-        self.create_vao_and_buffers()
+        self.model_buffer = None
+        self.mvp_buffer = None
+        self.normal_mat_buffer = None
+        self.create_buffers()
+        self.create_vao()
 
     def __del__(self):
         # Note: Since moderngl_window.opengl.vao.VAO defaults to releasing buffers, we don't need
         # to do so manually.
         self.vao.release()
 
-    def create_vao_and_buffers(self) -> None:
-        ctx = mglw.ctx()
-        length = self.instance_count
-
-        if self.vao:
-            self.vao.release()
-
+    def create_vao(self) -> None:
         self.vao = self.vao_generator(*self.vao_generator_args, **self.vao_generator_kwargs)
 
         # This fixes a performance issue likely caused by a bug in the macOS OpenGL driver
         if not self.vao._index_buffer:
             self.vao.index_buffer(np.arange(self.vao.vertex_count, dtype=np.uint32))
 
-        self.instance_models = ctx.buffer(reserve=4 * 16 * length)
-        self.instance_mvps = ctx.buffer(reserve=4 * 16 * length)
-        self.instance_normal_mats = ctx.buffer(reserve=4 * 9 * length)
+        self.vao.buffer(self.mvp_buffer, '16f/i', ['mvp'])
+        self.vao.buffer(self.normal_mat_buffer, '9f/i', ['normal_mat'])
+        self.vao.buffer(self.model_buffer, '16f/i', ['model'])
 
-        if self.texture:
-            self.instance_texture_coords = ctx.buffer(reserve=4 * 2 * length)
-            self.vao.buffer(self.instance_texture_coords, '2f/i', ['in_texcoord'])
+    def create_buffers(self):
+        ctx = mglw.ctx()
+        length = self.instance_count
 
-        self.vao.buffer(self.instance_mvps, '16f/i', ['mvp'])
-        self.vao.buffer(self.instance_normal_mats, '9f/i', ['normal_mat'])
-        self.vao.buffer(self.instance_models, '16f/i', ['model'])
+        if self.mvp_buffer:
+            self.mvp_buffer.orphan(4 * 16 * length)
+        else:
+            self.mvp_buffer = ctx.buffer(reserve=4 * 16 * length)
+
+        if self.model_buffer:
+            self.model_buffer.orphan(4 * 16 * length)
+        else:
+            self.model_buffer = ctx.buffer(reserve=4 * 16 * length)
+
+        if self.normal_mat_buffer:
+            self.normal_mat_buffer.orphan(4 * 9 * length)
+        else:
+            self.normal_mat_buffer = ctx.buffer(reserve=4 * 9 * length)
 
     def get_instance_data(self, view_proj: Matrix44) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         transforms = [transform.transformation_matrix for transform in self.transforms]
@@ -459,20 +462,20 @@ class InstancedObject(Renderable):
 
     def add_instance(self, transform: Transform3D) -> None:
         self.instance_count += 1
-        self.create_vao_and_buffers()
+        self.create_buffers()
         self.transforms.append(transform)
 
     def add_instances(self, transforms: Sequence[Transform3D]) -> None:
         if len(transforms):
             self.instance_count += len(transforms)
-            self.create_vao_and_buffers()
+            self.create_buffers()
             self.transforms.extend(transforms)
 
     def update(self, view_proj: Matrix44) -> None:
         models, mvps, normal_mats = self.get_instance_data(view_proj)
-        self.instance_models.write(models)
-        self.instance_mvps.write(mvps)
-        self.instance_normal_mats.write(normal_mats)
+        self.model_buffer.write(models)
+        self.mvp_buffer.write(mvps)
+        self.normal_mat_buffer.write(normal_mats)
 
     def render(
             self,
