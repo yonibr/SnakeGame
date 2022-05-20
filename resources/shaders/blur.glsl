@@ -31,7 +31,7 @@ void main()
      vec3 result = texture(image, TexCoords).rgb * weights[0];
      if(horizontal)
      {
-         for(int i = 1; i < 5; ++i)
+         for(int i = 1; i < 3; ++i)
          {
              vec2 offset =  vec2(offsets[i] / tex_size.x, 0.0);
              result += texture(image, TexCoords + offset).rgb * weights[i];
@@ -40,7 +40,7 @@ void main()
      }
      else
      {
-         for(int i = 1; i < 5; ++i)
+         for(int i = 1; i < 3; ++i)
          {
              vec2 offset =  vec2(0.0, offsets[i] / tex_size.y);
              result += texture(image, TexCoords + offset).rgb * weights[i];
