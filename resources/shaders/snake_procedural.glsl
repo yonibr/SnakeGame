@@ -2,15 +2,12 @@
 
 #if defined VERTEX_SHADER
 
-uniform vec3 in_color;
-
 in vec4 in_position;
 in mat4 model;
 in mat3 normal_mat;
 in mat4 mvp;
 
 out VS_OUT {
-    vec3 Color;
     mat4 mvp;
     mat3 normal_mat;
     mat4 model;
@@ -19,7 +16,6 @@ out VS_OUT {
 void main()
 {
     vs_out.normal_mat = normal_mat;
-    vs_out.Color = in_color;
     vs_out.model = model;
     vs_out.mvp = mvp;
 
@@ -27,7 +23,7 @@ void main()
 }
 
 #elif defined GEOMETRY_SHADER
-// Geometry shader is a odified version of the following:
+// Geometry shader is a modified version of the following:
 //    https://github.com/torbjoern/polydraw_scripts/blob/master/geometry/drawcone_geoshader.pss
 
 #define PI 3.14159
@@ -40,7 +36,6 @@ uniform LightSpaceMatrix {
 } lightSpace;
 
 in VS_OUT {
-    vec3 Color;
     mat4 mvp;
     mat3 normal_mat;
     mat4 model;
@@ -49,7 +44,6 @@ in VS_OUT {
 out GS_OUT {
     vec3 FragPos;
     vec3 Normal;
-    vec3 Color;
     vec4 FragPosLightSpace;
 } gs_out;
 
@@ -91,14 +85,12 @@ void createTube(vec3 pos1, vec3 pos2, float r1, float r2) {
         gs_out.FragPos = vec3(gs_in[0].model * vec4(p1, 1.0));
         gs_out.FragPosLightSpace = lightSpace.matrix * vec4(gs_out.FragPos, 1.0);
         gs_out.Normal = normalize(gs_in[0].normal_mat * normal);
-        gs_out.Color = gs_in[0].Color;
         EmitVertex();
 
         gl_Position = gs_in[1].mvp * vec4(p2, 1.0);
         gs_out.FragPos = vec3(gs_in[1].model * vec4(p2, 1.0));
         gs_out.FragPosLightSpace = lightSpace.matrix * vec4(gs_out.FragPos, 1.0);
         gs_out.Normal = normalize(gs_in[1].normal_mat * normal);
-        gs_out.Color = gs_in[1].Color;
         EmitVertex();
     }
     EndPrimitive();
@@ -118,6 +110,8 @@ uniform sampler2D shadowMap;
 uniform float specularStrength;
 uniform float brightness_mult = 1.0;
 
+uniform vec3 in_color;
+
 uniform ViewPos {
     vec3 val;
 } viewPos;
@@ -133,7 +127,6 @@ uniform LightColor {
 in GS_OUT {
     vec3 FragPos;
     vec3 Normal;
-    vec3 Color;
     vec4 FragPosLightSpace;
 } fs_in;
 
@@ -178,7 +171,6 @@ float ShadowCalculation(vec4 fragPosLightSpace)
 
 void main()
 {
-    vec3 color = fs_in.Color;
     vec3 normal = fs_in.Normal;
 
     // ambient
@@ -201,7 +193,7 @@ void main()
     float shadow = ShadowCalculation(fs_in.FragPosLightSpace);
 
     // Calculate lighting value
-    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * color;
+    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * in_color;
 
     // check whether result is higher than some threshold, if so, output as bloom threshold color
     float brightness = dot(lighting, vec3(0.2126, 0.7152, 0.0722));

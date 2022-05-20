@@ -975,8 +975,8 @@ class TaperedSnakeRenderer(Renderable):
                 del self.tail.vaos[glo]
             self.clear_vao_instance[body_program] = False
 
-        self.body_program.set_uniform_value('specularStrength', 0.1)
-        self.body_program.set_uniform_value('in_color', self.color)
+        body_program.set_uniform_value('specularStrength', 0.1)
+        body_program.set_uniform_value('in_color', self.color)
 
         self.tail.render(body_program.program, mode=moderngl.LINE_STRIP)
 
@@ -1170,6 +1170,12 @@ class Scene(Renderable):
         self.food_renderer = FoodRenderer(game, theme)
 
         prog = state.shader_program_repo['lighting'].program
+        prog['LightPos'].binding = 1
+        prog['LightColor'].binding = 2
+        prog['ViewPos'].binding = 3
+        prog['LightSpaceMatrix'].binding = 4
+
+        prog = state.shader_program_repo['snake_procedural'].program
         prog['LightPos'].binding = 1
         prog['LightColor'].binding = 2
         prog['ViewPos'].binding = 3
