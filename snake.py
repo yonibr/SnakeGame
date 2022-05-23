@@ -179,7 +179,7 @@ class Wall(NodeCollection):
 class Level(object):
     def __init__(
             self, walls: Mapping[str, Wall], board_width: int, board_height: int,
-            tick_func: Optional[Callable[[Mapping[str, Wall], int], None]]=None):
+            tick_func: Optional[Callable[[Mapping[str, Wall], int], bool]]=None):
         self.walls = walls
         self.board_width = board_width
         self.board_height = board_height
@@ -194,7 +194,9 @@ class Level(object):
     def tick(self) -> None:
         self.tick_counter += 1
         if self.tick_func:
-            self.tick_func(self.walls, self.tick_counter)
+            did_change = self.tick_func(self.walls, self.tick_counter)
+            if did_change:
+                self.mask = self.compute_mask()
 
     def in_wall(self, to_check: Union[Node, Tuple[int, int]]) -> bool:
         if isinstance(to_check, Node):
@@ -335,6 +337,8 @@ class Level(object):
 
             if abs(board_width // 2 - (wall_x + cycle_sign)) < max_center_offset:
                 wall.move(direction)
+                return True
+            return False
 
         outer_walls = cls.outer_walls(board_width, board_height)
         moving_wall = Wall(board_width // 2, board_height // 3, 1, board_height // 3)
