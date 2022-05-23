@@ -169,6 +169,8 @@ def main():
 
     tick_time = other_params['tick_time']
 
+    state.player_name = other_params['player_name']
+
     renderer = renderers[renderer_name]()
 
     renderer.initialize(state.game, tick_time=tick_time, **renderer_params)

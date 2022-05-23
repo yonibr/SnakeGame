@@ -3,6 +3,7 @@
 import numpy as np
 from threading import Lock
 
+player_name = None
 level_name = None
 direction_queue = None
 run = None

@@ -1,12 +1,9 @@
-# TODO: maybe switch from parquet to feather
-
-import operator
 import pandas as pd
 import platform
+import sqlite3 as sl
 import threading
 import time
 
-from functools import reduce
 from pygame.locals import K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE
 from moderngl_window.context.pyglet import Keys as PglKeys
 from pynput.keyboard import Key
@@ -20,6 +17,22 @@ if platform.system() != 'Windows':
     import curses.ascii
 
 high_score_params = ['start_length', 'board_width', 'board_height', 'speed', 'level']
+
+db_conn = sl.connect('snake.db')
+
+with db_conn:
+    db_conn.execute('''
+    create table if not exists scores (
+        player_name text,
+        start_length integer,
+        board_width integer,
+        board_height integer,
+        speed integer,
+        level text,
+        score integer,
+        length integer
+    );
+    ''')
 
 
 # Modified from https://stackoverflow.com/a/48709380/2892775
@@ -106,54 +119,63 @@ def game_over_text(game: Game, got_high_score: bool) -> str:
     ]))
 
 
-def get_same_param_score_df(score_df: pd.DataFrame) -> pd.DataFrame:
-    indices = reduce(
-        operator.and_,
-        (score_df.get(param) == getattr(state, param) for param in high_score_params)
-    )
-    return score_df[indices].reset_index(drop=True)
-
-
 def update_high_scores(game: Game, check_top_n: int=5) -> bool:
+    name = state.player_name
     score = game.score
-    length = len(game.snake)
-    row = {
-        'score': score,
-        'length': length,
-        **{param: getattr(state, param) for param in high_score_params}
-    }
+    data = [
+        name,
+        state.start_length,
+        state.board_width,
+        state.board_height,
+        state.speed,
+        state.level_name,
+        score,
+        len(game.snake)
+    ]
+    with db_conn:
+        db_conn.execute('''
+            insert into scores
+                (player_name, start_length, board_width, board_height, speed, level, score, length)
+                 values(?, ?, ?, ?, ?, ?, ?, ?)
+        ''', data)
 
-    try:
-        score_df = pd.read_parquet('scores.parquet')
-        score_df = score_df.append(row, ignore_index=True)
-        score_df.sort_values(
-            ['score', 'length'], ignore_index=True, inplace=True, ascending=False
-        )
+        min_high_score_name, min_high_score = db_conn.execute(f'''
+            select
+                player_name,
+                score
+            from scores
+            where
+                level = "{state.level_name}" and
+                start_length = {state.start_length} and
+                board_width = {state.board_width} and
+                board_height = {state.board_height} and
+                speed = {state.speed}
+            order by score desc, rowid asc
+            limit {check_top_n}
+        ''').fetchall()[-1]
 
-        same_param_score_df = get_same_param_score_df(score_df)
-
-        lowest_high_score = same_param_score_df.iloc[
-            min(check_top_n, len(same_param_score_df)) - 1
-        ]
-        high_score = (
-            (lowest_high_score.score < score) or
-            (
-                lowest_high_score.score == score and lowest_high_score.length < length
-            )
-        )
-    except FileNotFoundError:
-        score_df = pd.DataFrame(data=row, index=[0])
-        high_score = True
-
-    score_df.to_parquet('scores.parquet')
-
-    return high_score
+    return score > min_high_score or (score == min_high_score and name == min_high_score_name)
 
 
-def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str]]:
-    high_scores_df = get_same_param_score_df(pd.read_parquet(f'scores.parquet')).head(top_n)
+def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str], List[str]]:
+    high_scores_df = pd.read_sql(f'''
+        select
+            player_name,
+            score,
+            length
+        from scores
+        where
+            level = "{state.level_name}" and
+            start_length = {state.start_length} and
+            board_width = {state.board_width} and
+            board_height = {state.board_height} and
+            speed = {state.speed}
+        order by score desc, rowid asc
+        limit {top_n}
+    ''', db_conn)
 
     return (
+        high_scores_df.player_name.to_list(),
         high_scores_df.score.astype(str).to_list(),
         high_scores_df.length.astype(str).to_list()
     )

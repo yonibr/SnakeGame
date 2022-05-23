@@ -4,6 +4,7 @@
 #   - Make it so scale factor decreases if window size would be to big for the screen
 #   - Make font size depend on scale factor
 #   - Fix PGRenderer2 not working at very low FPS
+#   - Display names in high scores
 
 import itertools
 import moderngl
@@ -242,7 +243,7 @@ class PGRenderer(Renderer):
         )[0]
 
     def draw_high_scores(self, top_n=5) -> pg.Rect:
-        scores, lengths = get_high_scores(top_n=top_n)
+        names, scores, lengths = get_high_scores(top_n=top_n)
 
         font_size = 36
         line_spacing = 6
@@ -1143,7 +1144,7 @@ if platform.system() != 'Windows':
             self.draw_high_scores(game)
 
         def draw_high_scores(self, game: Game, top_n: int=5) -> None:
-            scores, lengths = get_high_scores(top_n=top_n)
+            names, scores, lengths = get_high_scores(top_n=top_n)
 
             start_y = self.height // 2
 
@@ -1522,7 +1523,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
     def draw_high_scores(self, top_n=5) -> None:
         if not self.high_scores_renderer:
-            scores, lengths = get_high_scores(top_n=top_n)
+            names, scores, lengths = get_high_scores(top_n=top_n)
             scores = [' ' * (6 - len(s)) + s for s in scores]
 
             text = '\n'.join([

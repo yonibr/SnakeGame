@@ -34,6 +34,7 @@ DEFAULT_START_LEN = 3
 MAX_KEY_QUEUE_DEPTH = 2
 DEFAULT_RENDERER = 'PG3'
 DEFAULT_LEVEL = 'Basic'
+DEFAULT_NAME = 'Nobody'
 
 game_param_names = [
     'start_x', 'start_y', 'start_length', 'board_width', 'board_height', 'speed', 'level'
@@ -93,6 +94,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action='store_true'
     )
     parser.add_argument('--level', default=DEFAULT_LEVEL, type=str, choices=levels.keys())
+    parser.add_argument('--player_name', default=DEFAULT_NAME, type=str)
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -135,7 +137,8 @@ def parse_args() -> Tuple[List[Union[int, str]], Dict[str, Union[bool, str]], Di
     other_params = {
         'tick_time': SPEED_OPTIONS[args.speed],
         'max_queue_depth': args.max_queue_depth,
-        'renderer': args.renderer
+        'renderer': args.renderer,
+        'player_name': args.player_name
     }
 
     return game_params, renderer_params, other_params
