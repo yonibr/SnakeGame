@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from enum import auto, Enum
 from moderngl_window import geometry as geom
+from moderngl_window.timers.clock import Timer
 from pygame import gfxdraw, surfarray
 from pygame.mixer import Sound
 from pygame.time import Clock
@@ -157,6 +158,8 @@ class PGRenderer(Renderer):
 
     def run(self, game: Game) -> None:
         elapsed_time = frames = 0
+
+        state.run = True
         
         while state.run:
             for event in pg.event.get():
@@ -969,6 +972,7 @@ class CLRenderer(Renderer):
             self.loop.cancel()
 
     def initialize(self, game: Game, **kw_args: Any) -> None:
+        state.run = True
         self.loop = SetInterval(kw_args['tick_time'], 0, self.render, self.handle_exit, game)
 
     def render(self, game: Game) -> None:
@@ -1111,6 +1115,7 @@ if platform.system() != 'Windows':
             self.window.refresh()
 
         def run(self, game: Game) -> None:
+            state.run = True
             while state.run:
                 self.process_input()
                 self.render(game)
@@ -1275,10 +1280,20 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     resource_dir = os.path.normpath(os.path.join(__file__, '../resources'))
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        display = pyglet.canvas.Display()
+        screen = display.get_default_screen()
+        self.fullscreen_width = screen.width
+        self.fullscreen_height = screen.height
+
+        self.create_window()
+        self.timer = Timer()
+        super().__init__(ctx=self.wnd.ctx, wnd=self.wnd, timer=self.timer, **kwargs)
         Renderer.__init__(self)
         self.wnd.config = self
         self.wnd.fullscreen_key = self.wnd.keys.F
+        self.wnd.swap_buffers()
+        self.wnd.set_default_viewport()
+
         self.high_score_vert_line = None
         self.high_score_horiz_line = None
         self.font = None
@@ -1303,16 +1318,6 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.eating_sound = None
 
         self.recreate_text_renderer = defaultdict(lambda: True)
-        self.initialize(state.game, **vars(self.argv))
-
-        display = pyglet.canvas.Display()
-        screen = display.get_default_screen()
-        self.fullscreen_width = screen.width
-        self.fullscreen_height = screen.height
-
-        # If the renderer is created in full-screen, we want to make sure the size is set properly
-        if self.fullscreen:
-            self.resize(self.fullscreen_width, self.fullscreen_height)
 
         # Note: after we finish rendering the first frame, set state.run to true. We do it in the
         # renderer instead of in main because startup can take a while.
@@ -1323,26 +1328,63 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     def add_arguments(cls, parser):
         add_args(parser)
 
-    def initialize(self, game: Game, **kw_args: Any) -> None:
+    def create_window(self):
+        parser = mglw.create_parser()
+        self.add_arguments(parser)
+        values = mglw.parse_args(parser=parser)
+        self.argv = values
+        window_cls = mglw.get_local_window_cls(values.window)
+
+        size = self.window_size
+        size = int(size[0] * values.size_mult), int(size[1] * values.size_mult)
+
+        # Resolve cursor
+        show_cursor = values.cursor
+        if show_cursor is None:
+            show_cursor = self.cursor
+
+        self.wnd = window_cls(
+            title=self.title,
+            size=size,
+            fullscreen=False,
+            resizable=values.resizable
+            if values.resizable is not None
+            else self.resizable,
+            gl_version=self.gl_version,
+            aspect_ratio=self.aspect_ratio,
+            vsync=values.vsync if values.vsync is not None else self.vsync,
+            samples=values.samples if values.samples is not None else self.samples,
+            cursor=show_cursor if show_cursor is not None else True,
+        )
+        self.wnd.print_context_info()
+
+        mglw.activate_context(window=self.wnd)
+
+    def initialize(self, game: Game, **kwargs) -> None:
+        kwargs.update(vars(self.argv))
         state.shader_program_repo = ProgramRepository()
         self.game = game
         self.food_pos = game.food.pos
-        self.theme = themes[kw_args['theme']]
+        self.theme = themes[kwargs['theme']]
         self.background_color = tuple(x / 255 for x in self.theme.background)
 
-        if kw_args['enable_sound']:
+        if kwargs['enable_sound']:
             self.eating_sound = pyglet.media.load(
                 'resources/audio/eating_sound.wav', streaming=False
             )
 
-        self.scene = Scene(
-            self.game, self.theme, kw_args['taper_opengl'],
-            aspect_ratio=self.window_size[0] / self.window_size[1]
-        )
-        self.font_book = FontBook()
+        if self.fullscreen:
+            aspect_ratio = self.fullscreen_width / self.fullscreen_height
+            self.wnd.fullscreen = True
+        else:
+            aspect_ratio = self.window_size[0] / self.window_size[1]
 
         self.update_viewport()
 
+        self.scene = Scene(
+            self.game, self.theme, kwargs['taper_opengl'], aspect_ratio=aspect_ratio
+        )
+        self.font_book = FontBook()
         self.font = self.font_book['SFNSMono', 64]
 
     def key_event(self, key, action, modifiers):
@@ -1367,17 +1409,14 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
         self.recreate_text_renderer.clear()
 
-    def resize(self, width: int, height: int) -> None:
-        super().resize(width, height)
+    def toggle_fullscreen(self) -> None:
+        if self.wnd.fullscreen:
+            width, height = self.fullscreen_width, self.fullscreen_height
+        else:
+            width, height = self.window_size
 
         self.update_viewport()
         self.scene.resize(width / height)
-
-    def toggle_fullscreen(self) -> None:
-        if self.wnd.fullscreen:
-            self.resize(self.fullscreen_width, self.fullscreen_height)
-        else:
-            self.resize(*self.window_size)
 
     def render(self, run_time: float, frame_time: float):
         self.elapsed_time += frame_time
@@ -1405,7 +1444,26 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         pass
 
     def run(self, game: Game) -> None:
-        pass
+        window = self.wnd
+
+        self.timer.start()
+
+        while not window.is_closing and (state.run or self.should_set_state_run):
+            current_time, delta = self.timer.next_frame()
+
+            window.use()
+            window.render(current_time, delta)
+            if not window.is_closing:
+                window.swap_buffers()
+
+        _, duration = self.timer.stop()
+        self.wnd.destroy()
+        if duration > 0:
+            print(
+                "Duration: {0:.2f}s @ {1:.2f} FPS".format(
+                    duration, self.wnd.frames / duration
+                )
+            )
 
     def draw_fps(self) -> None:
         if not self.fps_renderer or self.recreate_text_renderer['fps']:
@@ -1515,10 +1573,6 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         else:
             self.draw_score(self.game.score)
         self.draw_level_name()
-
-    @classmethod
-    def start(cls):
-        mglw.run_window_config(cls)
 
 
 renderers = {

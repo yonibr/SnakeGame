@@ -9,7 +9,6 @@
 #   = Two-player version that's a combination of snake and tron (players eat the food to make
 #     their tails longer and try to get the other player to crash into the wall or their tail)
 #   - Allow specifying name for high scores
-#   - OpenGL renderer
 #   - Starting countdown
 
 import time
@@ -170,23 +169,17 @@ def main():
 
     tick_time = other_params['tick_time']
 
-    if renderer_name != 'OpenGL':
-        renderer = renderers[renderer_name]()
+    renderer = renderers[renderer_name]()
 
-        renderer.initialize(state.game, tick_time=tick_time, **renderer_params)
+    renderer.initialize(state.game, tick_time=tick_time, **renderer_params)
 
-        if renderer_name == 'CL':
-            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-            listener.start()
+    if renderer_name == 'CL':
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
 
-        state.interval = SetInterval(tick_time, 2, loop, callback, state.game)
-        state.run = True
+    state.interval = SetInterval(tick_time, 3, loop, callback, state.game)
 
-        renderer.run(state.game)
-    else:
-        state.interval = SetInterval(tick_time, 5, loop, callback, state.game)
-        # Note: OpenGL renderer needs to set state.run = True because it can take a while to start up
-        renderers[renderer_name].start()
+    renderer.run(state.game)
 
 
 def rl_main():
