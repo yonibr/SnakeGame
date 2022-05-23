@@ -376,7 +376,7 @@ class PGRenderer2(PGRenderer):
         food_rect = self.draw_food(game)
         if food_rect:
             dirty_rects.append(food_rect)
-            if not first_render and hasattr(self, 'eating_sound'):
+            if not first_render and self.eating_sound:
                 self.eating_sound.play()
 
         # If the head has moved since the last render call, draw the new head
