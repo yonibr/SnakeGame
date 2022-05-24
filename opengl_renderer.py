@@ -21,6 +21,7 @@ import state
 
 from snake import Game
 from themes import Color, Theme
+from utils import HorizontalTextAlignment
 
 
 def get_viewport_dimensions() -> Tuple[int, int]:
@@ -226,7 +227,7 @@ class FontBook(MappingABC):
 
 
 # TODO:
-#    - Horizontal alignment
+#    - Enum for which_point
 class TextRenderer(Renderable):
     instance_number = 0
 
@@ -238,7 +239,8 @@ class TextRenderer(Renderable):
             x: float,
             y: float,
             which_point: str='topleft',
-            line_spacing: int=0):
+            line_spacing: int=0,
+            horizontal_alignment: HorizontalTextAlignment=HorizontalTextAlignment.LEFT):
         self.program = state.shader_program_repo['font']
         self.font = font
         self.which_point = which_point
@@ -246,6 +248,7 @@ class TextRenderer(Renderable):
         self.x = x
         self.y = y
         self.line_spacing = line_spacing
+        self.horizontal_alignment = horizontal_alignment
 
         self.position_buffer = None
         self.texture_coords_buffer = None
@@ -271,7 +274,7 @@ class TextRenderer(Renderable):
             self._text = new_text
 
             renderable_characters = self._text.replace('\t', ' ' * 4)
-            num_renderable_chars = len(renderable_characters)
+            num_renderable_chars = len(renderable_characters.replace('\n', ''))
             if num_renderable_chars != self.num_renderable_chars:
                 self.num_renderable_chars = num_renderable_chars
 
@@ -282,10 +285,10 @@ class TextRenderer(Renderable):
                 self.create_buffers()
 
             # Set width and height of text area
-            rows = renderable_characters.split('\n')
-            num_rows = len(rows)
-            self.width = max(len(row) for row in rows) * self.font.char_width
-            self.height = num_rows * self.font.char_height + (num_rows - 1) * self.line_spacing
+            self.rows = renderable_characters.split('\n')
+            self.num_rows = len(self.rows)
+            self.width = max(len(row) for row in self.rows) * self.font.char_width
+            self.height = self.num_rows * self.font.char_height + (self.num_rows - 1) * self.line_spacing
 
             self.update_buffers()
 
@@ -331,6 +334,16 @@ class TextRenderer(Renderable):
             ' bottomleft, midbottom, bottomright'
         ]))
 
+    def get_line_start_offsets(self) -> List[float]:
+        char_width = self.font.char_width
+        width_in_chars = self.width / char_width
+
+        if self.horizontal_alignment == HorizontalTextAlignment.CENTERED:
+            return [(width_in_chars - len(row)) / 2 * char_width for row in self.rows]
+        if self.horizontal_alignment == HorizontalTextAlignment.RIGHT:
+            return [(width_in_chars - len(row)) * char_width for row in self.rows]
+        return [0.0] * self.num_rows
+
     def update_buffers(self) -> None:
         offsets, texture_coords = self.get_offsets_and_texture_coords()
 
@@ -355,16 +368,20 @@ class TextRenderer(Renderable):
 
         length = 2 * self.num_renderable_chars
         start_x, start_y = self.get_position_offset()
+        line_start_offsets = self.get_line_start_offsets()
         offsets = np.zeros(length, dtype='f4')
         texture_coords = np.zeros(length, dtype='f4')
-        x_offset = 0
+        x_offset = line_start_offsets[0]
         y_offset = 0
-        for char, idx in zip(self.text, range(0, length, 2)):
+        line_idx = 0
+        idx = 0
+        for char in self.text:
             i = ord(char)
             x, y = i % 16, 9 - i // 16 - 2
 
             if char == '\n':
-                x_offset = 0
+                line_idx += 1
+                x_offset = line_start_offsets[line_idx]
                 y_offset += font.char_height + self.line_spacing
             elif char == '\t':
                 x_offset += 4 * font.char_width
@@ -374,6 +391,7 @@ class TextRenderer(Renderable):
                 texture_coords[idx] = x * dx
                 texture_coords[idx + 1] = y * dy
                 x_offset += font.char_width
+                idx += 2
 
         return offsets, texture_coords
 

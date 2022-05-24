@@ -4,6 +4,7 @@ import sqlite3 as sl
 import threading
 import time
 
+from enum import Enum
 from pygame.locals import K_UP, K_DOWN, K_LEFT, K_RIGHT, K_ESCAPE
 from moderngl_window.context.pyglet import Keys as PglKeys
 from pynput.keyboard import Key
@@ -33,6 +34,12 @@ with db_conn:
         length integer
     );
     ''')
+
+
+class HorizontalTextAlignment(Enum):
+    LEFT = 'left'
+    CENTERED = 'centered'
+    RIGHT = 'right'
 
 
 # Modified from https://stackoverflow.com/a/48709380/2892775
