@@ -18,9 +18,11 @@ import subprocess
 import time
 
 from abc import ABC, abstractmethod
+from argparse import ArgumentParser
 from collections import defaultdict
 from enum import auto, Enum
 from moderngl_window import geometry as geom
+from moderngl_window.context.base import KeyModifiers
 from moderngl_window.timers.clock import Timer
 from pygame import gfxdraw, surfarray
 from pygame.mixer import Sound
@@ -69,7 +71,7 @@ config_defaults = {
 
 
 class HashableRect(pg.Rect):
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.x, self.y, self.width, self.height))
 
 
@@ -78,7 +80,7 @@ class Renderer(ABC):
         self.fps = 0
 
     @abstractmethod
-    def initialize(self, game: Game, **kw_args: Any) -> None:
+    def initialize(self, game: Game, **kwargs: Any) -> None:
         pass
 
     @abstractmethod
@@ -112,8 +114,8 @@ class PGRenderer(Renderer):
         self.width = None
         self.scale_factor = None
 
-    def initialize(self, game: Game, **kw_args: Any) -> None:
-        self.scale_factor = kw_args['scale_factor']
+    def initialize(self, game: Game, **kwargs: Any) -> None:
+        self.scale_factor = kwargs['scale_factor']
         if game:
             self.width = game.board_width * self.scale_factor
             self.height = game.board_height * self.scale_factor
@@ -130,11 +132,11 @@ class PGRenderer(Renderer):
         self.font_type = pg.freetype.get_default_font()
         self.fonts = dict()
 
-        self.theme = themes[kw_args['theme']]
+        self.theme = themes[kwargs['theme']]
 
         self.draw_game_over = False
 
-        if kw_args['enable_sound']:
+        if kwargs['enable_sound']:
             self.eating_sound = Sound('resources/audio/eating_sound.wav')
 
     def render(self, game: Game) -> None:
@@ -323,8 +325,8 @@ class PGRenderer2(PGRenderer):
         self.first_render = True
         self.drew_game_over = False
 
-    def initialize(self, game: Game, **kw_args: Any) -> None:
-        super(PGRenderer2, self).initialize(game, **kw_args)
+    def initialize(self, game: Game, **kwargs: Any) -> None:
+        super(PGRenderer2, self).initialize(game, **kwargs)
         self.last_fps_rect = pg.Rect(6, 6, 0, 0)
         self.last_score_rect = pg.Rect(self.width, 6, 0, 0)
         self.last_length_rect = pg.Rect(self.width / 2, 6, 0, 0)
@@ -334,7 +336,7 @@ class PGRenderer2(PGRenderer):
         self.food_was_in_wall = False
         self.drew_level_name = False
 
-        self.grid_lines = self.generate_gridlines() if kw_args['show_grid'] else None
+        self.grid_lines = self.generate_gridlines() if kwargs['show_grid'] else None
 
         self.previous_wall_rects = set()
 
@@ -377,7 +379,7 @@ class PGRenderer2(PGRenderer):
         for rect in to_remove:
             dirty_rects.append(self.fill_background(rect))
         self.past_snake_rects = self.past_snake_rects - to_remove
-        
+
         food_rect = self.draw_food(game)
         if food_rect:
             dirty_rects.append(food_rect)
@@ -533,7 +535,7 @@ class PGRenderer2(PGRenderer):
             self.drew_level_name = True
             return super(PGRenderer2, self).draw_level_name()
 
-    def draw_all_text(self, game: Game) -> List[pg.Rect]:        
+    def draw_all_text(self, game: Game) -> List[pg.Rect]:
         # Either draw the score or the game over screen
         if game.game_over and not self.drew_game_over:
             # We want to skip one rendering cycle before drawing game over and the high
@@ -551,7 +553,7 @@ class PGRenderer2(PGRenderer):
             dirty_rects = [self.draw_score(game.score)]
         else:
             dirty_rects = []
-            
+
         # Draw the frame rate
         dirty_rects.append(self.draw_fps())
 
@@ -958,12 +960,12 @@ class PGRenderer3(PGRenderer2):
 
 
 class CLRenderer(Renderer):
-    def __init__(self, *vargs):
+    def __init__(self, *args: Any):
         super().__init__()
         self.loop = None
 
     @staticmethod
-    def clear_terminal():
+    def clear_terminal() -> None:
         if platform.system() == 'Windows':
             subprocess.Popen('cls', shell=True).communicate()
         else:  # Linux and Mac
@@ -973,9 +975,9 @@ class CLRenderer(Renderer):
         if not state.run:
             self.loop.cancel()
 
-    def initialize(self, game: Game, **kw_args: Any) -> None:
+    def initialize(self, game: Game, **kwargs: Any) -> None:
         state.run = True
-        self.loop = SetInterval(kw_args['tick_time'], 0, self.render, self.handle_exit, game)
+        self.loop = SetInterval(kwargs['tick_time'], 0, self.render, self.handle_exit, game)
 
     def render(self, game: Game) -> None:
         self.clear_terminal()
@@ -1019,7 +1021,7 @@ if platform.system() != 'Windows':
             self.window = None
             self.stdscr = None
 
-        def initialize(self, game: Game, **kw_args) -> None:
+        def initialize(self, game: Game, **kwargs: Any) -> None:
             self.stdscr = curses.initscr()
             self.window = curses.newwin(game.board_height, game.board_width, 0, 0)
             curses.start_color()
@@ -1029,7 +1031,7 @@ if platform.system() != 'Windows':
             self.window.nodelay(True)
             curses.curs_set(False)
 
-            self.use_colors = self.init_theme(themes[kw_args['theme']])
+            self.use_colors = self.init_theme(themes[kwargs['theme']])
             if self.use_colors:
                 self.window.bkgd(' ', curses.color_pair(4))
 
@@ -1071,7 +1073,7 @@ if platform.system() != 'Windows':
                 if node is game.snake.head:
                     s = ':' if game.snake.direction.offset_y == 0 else '܅'
                 self.draw_str(s, node.x, node.y, self.eye_color, game, options=curses.A_BOLD)
-     
+
             if game.food != self.previous_food:
                 self.draw_str(game.food.marker, game.food.x, game.food.y, self.food_color, game)
                 self.previous_food = game.food
@@ -1237,7 +1239,7 @@ if platform.system() != 'Windows':
 
             return use_colors
 
-        def process_input(self):
+        def process_input(self) -> None:
             key = self.window.getch()
             while key != -1:
                 handle_input(parse_key(key, 'curses'), False, ignore_released=True)
@@ -1281,7 +1283,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
     resource_dir = os.path.normpath(os.path.join(__file__, '../resources'))
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any):
         display = pyglet.canvas.Display()
         screen = display.get_default_screen()
         self.fullscreen_width = screen.width
@@ -1330,10 +1332,10 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
     # We want to add the snake arguments to this class so it doesn't fail when parsing
     @classmethod
-    def add_arguments(cls, parser):
+    def add_arguments(cls, parser: ArgumentParser) -> None:
         add_args(parser)
 
-    def create_window(self):
+    def create_window(self) -> None:
         parser = mglw.create_parser()
         self.add_arguments(parser)
         values = mglw.parse_args(parser=parser)
@@ -1365,7 +1367,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
         mglw.activate_context(window=self.wnd)
 
-    def initialize(self, game: Game, **kwargs) -> None:
+    def initialize(self, game: Game, **kwargs: Any) -> None:
         kwargs.update(vars(self.argv))
         state.shader_program_repo = ProgramRepository()
         self.game = game
@@ -1392,14 +1394,14 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.font_book = FontBook()
         self.font = self.font_book['SFNSMono', 64]
 
-    def key_event(self, key, action, modifiers):
+    def key_event(self, key: Any, action: Any, modifiers: KeyModifiers) -> None:
         if action in {self.wnd.keys.ACTION_PRESS, self.wnd.keys.ACTION_RELEASE}:
             handle_input(parse_key(key, 'pyglet'), action == self.wnd.keys.ACTION_RELEASE)
 
         if action == self.wnd.keys.ACTION_RELEASE and key == self.wnd.keys.F:
             self.toggle_fullscreen()
 
-    def update_viewport(self):
+    def update_viewport(self) -> None:
         self.viewport_width, self.viewport_height = get_viewport_dimensions()
 
         self.orthogonal_proj = Matrix44.orthogonal_projection(
@@ -1423,7 +1425,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.update_viewport()
         self.scene.resize(width / height)
 
-    def render(self, run_time: float, frame_time: float):
+    def render(self, run_time: float, frame_time: float) -> None:
         self.elapsed_time += frame_time
         self.frames += 1
         if self.elapsed_time >= 1:
@@ -1511,7 +1513,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             self.recreate_text_renderer['level'] = False
         self.level_renderer.render(self.orthogonal_proj)
 
-    def draw_game_over_text(self):
+    def draw_game_over_text(self) -> None:
         # We want to skip one rendering cycle before drawing game over and the high
         # scores because saving/reading the high scores takes a bit
         if self.recreate_text_renderer['game_over']:
@@ -1524,7 +1526,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             self.recreate_text_renderer['game_over'] = False
         self.game_over_renderer.render(self.orthogonal_proj)
 
-    def draw_high_scores(self, top_n=5) -> None:
+    def draw_high_scores(self, top_n: int=5) -> None:
         if self.recreate_text_renderer['high_scores']:
             names, scores, lengths = get_high_scores(top_n=top_n)
 
@@ -1588,7 +1590,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.high_scores_scores_renderer.render(self.orthogonal_proj)
         self.high_scores_lengths_renderer.render(self.orthogonal_proj)
 
-    def draw_all_text(self):
+    def draw_all_text(self) -> None:
         self.draw_fps()
         self.draw_length(len(self.game.snake))
         if self.game.game_over:
@@ -1611,4 +1613,3 @@ renderers = {
 
 if platform.system() != 'Windows':
     renderers['curses'] = CursesRenderer
-

@@ -48,7 +48,7 @@ class Direction(object):
     def __repr__(self) -> str:
         return str(self)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.offset_x, self.offset_y))
 
     def is_opposite(self, other) -> bool:
@@ -110,7 +110,7 @@ class Node(object):
         self.x += direction.offset_x
         self.y += direction.offset_y
 
-    def copy(self):
+    def copy(self) -> 'Node':
         return Node(self.x, self.y, self.marker)
 
 
@@ -178,7 +178,10 @@ class Wall(NodeCollection):
 
 class Level(object):
     def __init__(
-            self, walls: Mapping[str, Wall], board_width: int, board_height: int,
+            self,
+            walls: Mapping[str, Wall],
+            board_width: int,
+            board_height: int,
             tick_func: Optional[Callable[[Mapping[str, Wall], int], bool]]=None):
         self.walls = walls
         self.board_width = board_width
@@ -205,7 +208,7 @@ class Level(object):
             return self.mask[to_check[1]][to_check[0]]
         return False
 
-    def get_neighbors(self, x, y):
+    def get_neighbors(self, x, y) -> List[Tuple[int, int]]:
         is_valid = lambda nx, ny: 0 <= nx < self.board_width and 0 <= ny < self.board_height
         # Direction vectors
         d_row = [-1, 0, 1, 0]
@@ -219,7 +222,7 @@ class Level(object):
                 neighbors.append((adj_x, adj_y))
         return neighbors
 
-    def compute_mask(self, cells=None):
+    def compute_mask(self, cells: Optional[List[List[bool]]]=None) -> List[List[bool]]:
         if not cells:
             cells = [[False] * self.board_width for _ in range(self.board_height)]
             for node in self.wall_nodes:
@@ -266,7 +269,7 @@ class Level(object):
         mask = self.mask
         width, height = self.board_width, self.board_height
 
-        def get_cell_accessibility(m):
+        def get_cell_accessibility(m: List[List[bool]]) -> List[List[int]]:
             accessibility = [[0] * width for _ in range(height)]
             for cx, cy in itertools.product(range(len(m[0])), range(len(m))):
                 if not m[cy][cx]:
@@ -326,7 +329,7 @@ class Level(object):
     def MovingVertWall(cls, board_width: int, board_height: int) -> 'Level':
         max_center_offset = board_width // 4
 
-        def tick_func(walls, tick_counter):
+        def tick_func(walls: Mapping[str, Wall], tick_counter: int) -> bool:
             wall = walls['moving_wall']
             wall_x = wall.nodes[0].x
             cycle_sign = copysign(1, tick_counter % (4 * max_center_offset) - max_center_offset * 2)
@@ -466,8 +469,13 @@ levels = {
 
 class Game(object):
     def __init__(
-            self, start_x: int, start_y: int, start_length: int, board_width: int,
-            board_height: int, score_multiplier: int,
+            self,
+            start_x: int,
+            start_y: int,
+            start_length: int,
+            board_width: int,
+            board_height: int,
+            score_multiplier: int,
             level: Union[str, Callable[[int, int], Level]]):
         self.board_width = board_width
         self.board_height = board_height

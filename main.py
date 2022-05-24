@@ -52,7 +52,7 @@ def handle_input(key: str, released: bool, ignore_released: bool=False) -> None:
         exit_game()
 
 
-def on_press(key):
+def on_press(key: keyboard.Key) -> bool:
     # Try to clear the keypress
     print('\b\b\b\b', end='\r')
 
@@ -61,7 +61,7 @@ def on_press(key):
     return True
 
 
-def on_release(key):
+def on_release(key: keyboard.Key) -> bool:
     # Try to clear the keypress
     print('\b\b\b\b\b', end='\r')
     print('    \b\b\b\b', end='\r')
@@ -100,7 +100,7 @@ def loop(game: Game) -> bool:
 random_counter = 0
 
 
-def rl_loop(env: 'Env', model) -> bool:  # TODO provide type hint for model
+def rl_loop(env: 'SnakeEnv', model: 'BaseRLModel') -> bool:
     # action = env.action_space.sample()
     # obs, reward, done, info = env.step(action)
 
@@ -127,7 +127,7 @@ def rl_loop(env: 'Env', model) -> bool:  # TODO provide type hint for model
     return done
 
 
-def run_recurr(env: 'Env', model) -> None:
+def run_recurr(env: 'SnakeEnv', model: 'BaseRLModel') -> None:
     global run_control_thread
 
     while run_control_thread:
@@ -148,7 +148,7 @@ def run_recurr(env: 'Env', model) -> None:
                 state.run = False
 
 
-def main():
+def main() -> None:
     # Import renderers.renderers here so when renderers.py imports exit_game
     # and handle_input, there's no exception
     from renderers import renderers
@@ -184,7 +184,7 @@ def main():
     renderer.run(state.game)
 
 
-def rl_main():
+def rl_main() -> None:
     from renderers import renderers
     from reinforcement_learning import create_cnn_lstm_ppo2_model
 

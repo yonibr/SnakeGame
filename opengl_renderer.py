@@ -460,7 +460,7 @@ class InstancedObject(Renderable):
         self.vao.buffer(self.normal_mat_buffer, '9f/i', ['normal_mat'])
         self.vao.buffer(self.model_buffer, '16f/i', ['model'])
 
-    def create_buffers(self):
+    def create_buffers(self) -> None:
         ctx = mglw.ctx()
         length = self.instance_count
 
@@ -575,7 +575,7 @@ class Light(Renderable):
         if force_update:
             self.sphere.update(view_proj)
 
-    def render(self):
+    def render(self) -> None:
         self.sphere.render(value_uniforms={
             'is_light_source': True, 'brightness_mult': self.brightness
         })
@@ -881,7 +881,7 @@ class TaperedSnakeRenderer(Renderable):
 
         return [left_transform, right_transform]
 
-    def create_tail(self, board_width: int, board_height: int):
+    def create_tail(self, board_width: int, board_height: int) -> None:
         snake_length = self.snake_length
         start_radius = self.start_radius
         min_radius = 0.2
@@ -913,7 +913,7 @@ class TaperedSnakeRenderer(Renderable):
         self.tail.get_buffer_by_name('in_position').vertices = body.shape[0]
         self.clear_vao_instance.clear()
 
-    def update_head_scale(self):
+    def update_head_scale(self) -> None:
         direction = self.snake.direction.name
 
         if direction == 'left' or direction == 'right':
@@ -921,7 +921,7 @@ class TaperedSnakeRenderer(Renderable):
         else:
             self.head_transform.scale_factor = Vector3([self.start_radius, 1, self.start_radius], dtype='f4')
 
-    def create_buffers(self):
+    def create_buffers(self) -> None:
         ctx = mglw.ctx()
         length = self.snake_length
 
@@ -1046,7 +1046,7 @@ class ShadowMap(Renderable):
         self.shadow_map.release()
         self.framebuffer.release()
 
-    def render(self, renderables: Sequence[Renderable]):
+    def render(self, renderables: Sequence[Renderable]) -> None:
         self.framebuffer.clear()
         self.framebuffer.use()
 
