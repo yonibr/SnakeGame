@@ -46,6 +46,7 @@ from themes import Theme, themes
 from utils import (
     game_over_text,
     get_high_scores,
+    HorizontalTextAlignment,
     parse_key,
     SetInterval,
     update_high_scores
@@ -1295,7 +1296,8 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.wnd.swap_buffers()
         self.wnd.set_default_viewport()
 
-        self.high_score_vert_line = None
+        self.high_score_vert_line1 = None
+        self.high_score_vert_line2 = None
         self.high_score_horiz_line = None
         self.font = None
         self.food_pos = None
@@ -1313,7 +1315,9 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.fps_renderer = None
         self.length_renderer = None
         self.game_over_renderer = None
-        self.high_scores_renderer = None
+        self.high_scores_names_renderer = None
+        self.high_scores_scores_renderer = None
+        self.high_scores_lengths_renderer = None
         self.elapsed_time = self.frames = 0
         self.draw_game_over = False
         self.eating_sound = None
@@ -1514,7 +1518,8 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             text = game_over_text(self.game, update_high_scores(self.game))
             self.game_over_renderer = TextRenderer(
                 self.font, text, self.theme.text, self.viewport_width / 2,
-                self.viewport_height * 0.7, which_point='midbottom'
+                self.viewport_height * 0.7, which_point='midbottom', line_spacing=12,
+                horizontal_alignment=HorizontalTextAlignment.CENTERED
             )
             self.recreate_text_renderer['game_over'] = False
         self.game_over_renderer.render(self.orthogonal_proj)
@@ -1522,43 +1527,66 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
     def draw_high_scores(self, top_n=5) -> None:
         if self.recreate_text_renderer['high_scores']:
             names, scores, lengths = get_high_scores(top_n=top_n)
-            scores = [' ' * (6 - len(s)) + s for s in scores]
 
-            text = '\n'.join([
-                ' Score  Length\n',
-                '\n'.join(map('  '.join, zip(scores, lengths)))
-            ])
+            name_text = '\n'.join(['Player', *names])
+            score_text = '\n'.join(['Score', *scores])
+            length_text = '\n'.join(['Length', *lengths])
 
-            self.high_scores_renderer = TextRenderer(
-                self.font, text, self.theme.text, self.viewport_width / 2,
-                self.viewport_height * 0.4, which_point='midtop'
+            top = self.viewport_height * 0.4
+            middle = self.viewport_width / 2
+            text_offset = self.font.char_width * 4
+
+            line_spacing = 16
+
+            self.high_scores_names_renderer = TextRenderer(
+                self.font, name_text, self.theme.text, middle - text_offset, top,
+                line_spacing=line_spacing, which_point='topright',
+                horizontal_alignment=HorizontalTextAlignment.RIGHT
+            )
+            self.high_scores_scores_renderer = TextRenderer(
+                self.font, score_text, self.theme.text, middle, top, line_spacing=line_spacing,
+                which_point='midtop', horizontal_alignment=HorizontalTextAlignment.CENTERED
+            )
+            self.high_scores_lengths_renderer = TextRenderer(
+                self.font, length_text, self.theme.text, middle + text_offset, top,
+                line_spacing=line_spacing
             )
             self.recreate_text_renderer['high_scores'] = False
 
+            hline_left = middle - text_offset - self.high_scores_names_renderer.width - line_spacing
+            hline_right = middle + text_offset + self.high_scores_lengths_renderer.width + line_spacing
             self.high_score_horiz_line = InstancedObject(
                 1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
                 vao_generator_kwargs={
-                    'size': (self.font.char_width * 16, 6),
-                    'pos': (
-                        self.viewport_width / 2,
-                        self.viewport_height * 0.4 - self.font.char_height * 1.5 + 3
-                    )
+                    'size': (hline_right - hline_left, 6),
+                    'pos': (middle, top - self.font.char_height - line_spacing / 2)
                 }
             )
-            self.high_score_vert_line = InstancedObject(
+
+            vline_offset_x = self.font.char_width * 3.25
+            vline_center_y = top - self.high_scores_names_renderer.height / 2
+            vline_height = self.high_scores_names_renderer.height + line_spacing * 2
+            self.high_score_vert_line1 = InstancedObject(
                 1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
                 vao_generator_kwargs={
-                    'size': (6, self.font.char_height * (top_n + 3)),
-                    'pos': (
-                        self.viewport_width / 2,
-                        self.viewport_height * 0.4 - self.font.char_height * (top_n + 1.5) / 2
-                    )
+                    'size': (6, vline_height),
+                    'pos': (middle + vline_offset_x, vline_center_y)
+                }
+            )
+            self.high_score_vert_line2 = InstancedObject(
+                1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
+                vao_generator_kwargs={
+                    'size': (6, vline_height),
+                    'pos': (middle - vline_offset_x, vline_center_y)
                 }
             )
 
         self.high_score_horiz_line.render(write_uniforms={'Mvp': self.orthogonal_proj})
-        self.high_score_vert_line.render(write_uniforms={'Mvp': self.orthogonal_proj})
-        self.high_scores_renderer.render(self.orthogonal_proj)
+        self.high_score_vert_line1.render(write_uniforms={'Mvp': self.orthogonal_proj})
+        self.high_score_vert_line2.render(write_uniforms={'Mvp': self.orthogonal_proj})
+        self.high_scores_names_renderer.render(self.orthogonal_proj)
+        self.high_scores_scores_renderer.render(self.orthogonal_proj)
+        self.high_scores_lengths_renderer.render(self.orthogonal_proj)
 
     def draw_all_text(self):
         self.draw_fps()
