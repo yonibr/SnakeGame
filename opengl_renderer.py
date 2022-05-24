@@ -227,17 +227,25 @@ class FontBook(MappingABC):
 
 # TODO:
 #    - Horizontal alignment
-#    - Controllable line spacing
 class TextRenderer(Renderable):
     instance_number = 0
 
-    def __init__(self, font: Font, text: str, color: Color, x: float, y: float, which_point: str='topleft'):
+    def __init__(
+            self,
+            font: Font,
+            text: str,
+            color: Color,
+            x: float,
+            y: float,
+            which_point: str='topleft',
+            line_spacing: int=0):
         self.program = state.shader_program_repo['font']
         self.font = font
         self.which_point = which_point
         self.color = color.r / 255, color.g / 255, color.b / 255
         self.x = x
         self.y = y
+        self.line_spacing = line_spacing
 
         self.position_buffer = None
         self.texture_coords_buffer = None
@@ -275,8 +283,9 @@ class TextRenderer(Renderable):
 
             # Set width and height of text area
             rows = renderable_characters.split('\n')
+            num_rows = len(rows)
             self.width = max(len(row) for row in rows) * self.font.char_width
-            self.height = len(rows) * self.font.char_height
+            self.height = num_rows * self.font.char_height + (num_rows - 1) * self.line_spacing
 
             self.update_buffers()
 
@@ -356,7 +365,7 @@ class TextRenderer(Renderable):
 
             if char == '\n':
                 x_offset = 0
-                y_offset += font.char_height
+                y_offset += font.char_height + self.line_spacing
             elif char == '\t':
                 x_offset += 4 * font.char_width
             elif 32 <= i < 128:
