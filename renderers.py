@@ -1467,7 +1467,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             )
 
     def draw_fps(self) -> None:
-        if not self.fps_renderer or self.recreate_text_renderer['fps']:
+        if self.recreate_text_renderer['fps']:
             self.fps_renderer = TextRenderer(
                 self.font, f'FPS: {self.fps: 0.1f}', self.theme.text, 10, self.viewport_height - 10
             )
@@ -1477,7 +1477,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.fps_renderer.render(self.orthogonal_proj)
 
     def draw_score(self, score: int) -> None:
-        if not self.score_renderer or self.recreate_text_renderer['score']:
+        if self.recreate_text_renderer['score']:
             self.score_renderer = TextRenderer(
                 self.font, f'Score: {score}', self.theme.text, self.viewport_width / 2,
                 self.viewport_height - 10, which_point='midtop'
@@ -1488,7 +1488,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.score_renderer.render(self.orthogonal_proj)
 
     def draw_length(self, length: int) -> None:
-        if not self.length_renderer or self.recreate_text_renderer['length']:
+        if self.recreate_text_renderer['length']:
             self.length_renderer = TextRenderer(
                 self.font, f'Length: {length}', self.theme.text, self.viewport_width - 10,
                 self.viewport_height - 10, which_point='topright'
@@ -1499,20 +1499,18 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.length_renderer.render(self.orthogonal_proj)
 
     def draw_level_name(self) -> None:
-        if not self.level_renderer or self.recreate_text_renderer['level']:
+        if self.recreate_text_renderer['level']:
             self.level_renderer = TextRenderer(
                 self.font, f'Level: {state.level_name}', self.theme.text, self.viewport_width / 2,
                 10, which_point='midbottom'
             )
             self.recreate_text_renderer['level'] = False
-        else:
-            self.level_renderer.text = f'Level: {state.level_name}'
         self.level_renderer.render(self.orthogonal_proj)
 
     def draw_game_over_text(self):
         # We want to skip one rendering cycle before drawing game over and the high
         # scores because saving/reading the high scores takes a bit
-        if not self.game_over_renderer or self.recreate_text_renderer['game_over']:
+        if self.recreate_text_renderer['game_over']:
             text = game_over_text(self.game, update_high_scores(self.game))
             self.game_over_renderer = TextRenderer(
                 self.font, text, self.theme.text, self.viewport_width / 2,
@@ -1522,7 +1520,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.game_over_renderer.render(self.orthogonal_proj)
 
     def draw_high_scores(self, top_n=5) -> None:
-        if not self.high_scores_renderer:
+        if self.recreate_text_renderer['high_scores']:
             names, scores, lengths = get_high_scores(top_n=top_n)
             scores = [' ' * (6 - len(s)) + s for s in scores]
 
@@ -1531,12 +1529,11 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
                 '\n'.join(map('  '.join, zip(scores, lengths)))
             ])
 
-            if not self.high_scores_renderer or self.recreate_text_renderer['high_scores']:
-                self.high_scores_renderer = TextRenderer(
-                    self.font, text, self.theme.text, self.viewport_width / 2,
-                    self.viewport_height * 0.4, which_point='midtop'
-                )
-                self.recreate_text_renderer['high_scores'] = False
+            self.high_scores_renderer = TextRenderer(
+                self.font, text, self.theme.text, self.viewport_width / 2,
+                self.viewport_height * 0.4, which_point='midtop'
+            )
+            self.recreate_text_renderer['high_scores'] = False
 
             self.high_score_horiz_line = InstancedObject(
                 1, geom.quad_2d, 'colored_quad', self.theme.text, [Transform3D()],
