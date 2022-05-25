@@ -6,7 +6,6 @@ uniform LightSpaceMatrix {
     mat4 matrix;
 } lightSpace;
 
-uniform vec3 in_color;
 
 in vec3 in_position;
 in vec3 in_normal;
@@ -17,7 +16,6 @@ in mat4 mvp;
 out VS_OUT {
     vec3 FragPos;
     vec3 Normal;
-    vec3 Color;
     vec4 FragPosLightSpace;
 } vs_out;
 
@@ -25,7 +23,6 @@ void main()
 {
     vs_out.FragPos = vec3(model * vec4(in_position, 1.0));
     vs_out.Normal = normalize(normal_mat * in_normal);
-    vs_out.Color = in_color;
     vs_out.FragPosLightSpace = lightSpace.matrix * vec4(vs_out.FragPos, 1.0);
 
     gl_Position = mvp * vec4(in_position, 1.0);
@@ -33,10 +30,11 @@ void main()
 
 #elif defined FRAGMENT_SHADER
 
+uniform vec3 color;
 uniform sampler2D shadowMap;
 uniform float specularStrength;
-uniform bool is_light_source;
-uniform float brightness_mult = 1.0;
+uniform bool isLightSource;
+uniform float brightnessMult = 1.0;
 
 uniform ViewPos {
     vec3 val;
@@ -53,7 +51,6 @@ uniform LightColor {
 in VS_OUT {
     vec3 FragPos;
     vec3 Normal;
-    vec3 Color;
     vec4 FragPosLightSpace;
 } fs_in;
 
@@ -98,12 +95,11 @@ float ShadowCalculation(vec4 fragPosLightSpace)
 
 void main()
 {
-    vec3 color = fs_in.Color;
     vec3 normal = fs_in.Normal;
 
     vec3 lighting;
-    if (is_light_source) {
-        lighting = fs_in.Color * brightness_mult;
+    if (isLightSource) {
+        lighting = color * brightnessMult;
     }
     else {
         // ambient

@@ -66,7 +66,7 @@ void main() {
 #elif defined FRAGMENT_SHADER
 
 uniform sampler2D tex;
-uniform vec3 text_color;
+uniform vec3 color;
 
 in vec2 TexCoords;
 out vec4 FragColor;
@@ -74,11 +74,11 @@ out vec4 FragColor;
 void main()
 {
     const float gamma = 2.2;
-    const vec3 correction_vec = vec3(1.0 / gamma);
+    const vec3 correctionVec = vec3(1.0 / gamma);
 
     float alpha = texture(tex, TexCoords).r;
-    vec3 gamma_corrected_color = pow(text_color, correction_vec);
-    FragColor = vec4(gamma_corrected_color, alpha);
+    vec3 gammaCorrectedColor = pow(color, correctionVec);
+    FragColor = vec4(gammaCorrectedColor, alpha);
 }
 
 #endif

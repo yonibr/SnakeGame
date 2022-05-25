@@ -6,11 +6,11 @@ in vec4 in_position;
 in mat4 model;
 
 out VS_OUT {
-    mat4 model;
+    mat4 Model;
 } vs_out;
 
 void main() {
-    vs_out.model = model;
+    vs_out.Model = model;
     gl_Position = in_position;
 }
 #elif defined GEOMETRY_SHADER
@@ -27,7 +27,7 @@ uniform LightSpaceMatrix {
 } lightSpace;
 
 in VS_OUT {
-    mat4 model;
+    mat4 Model;
 } gs_in[];
 
 // given to points p1 and p2 create a vector out
@@ -63,10 +63,10 @@ void createTube(vec3 pos1, vec3 pos2, float r1, float r2) {
         vec3 p1 = pos1 + r1 * normal;
         vec3 p2 = pos2 + r2 * normal;
 
-        gl_Position = lightSpace.matrix * gs_in[0].model * vec4(p1, 1.0);
+        gl_Position = lightSpace.matrix * gs_in[0].Model * vec4(p1, 1.0);
         EmitVertex();
 
-        gl_Position = lightSpace.matrix * gs_in[1].model * vec4(p2, 1.0);
+        gl_Position = lightSpace.matrix * gs_in[1].Model * vec4(p2, 1.0);
         EmitVertex();
     }
     EndPrimitive();

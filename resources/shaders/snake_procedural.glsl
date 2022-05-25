@@ -8,16 +8,16 @@ in mat3 normal_mat;
 in mat4 mvp;
 
 out VS_OUT {
-    mat4 mvp;
-    mat3 normal_mat;
-    mat4 model;
+    mat4 Mvp;
+    mat3 NormalMat;
+    mat4 Model;
 } vs_out;
 
 void main()
 {
-    vs_out.normal_mat = normal_mat;
-    vs_out.model = model;
-    vs_out.mvp = mvp;
+    vs_out.NormalMat = normal_mat;
+    vs_out.Model = model;
+    vs_out.Mvp = mvp;
 
     gl_Position = in_position;
 }
@@ -36,9 +36,9 @@ uniform LightSpaceMatrix {
 } lightSpace;
 
 in VS_OUT {
-    mat4 mvp;
-    mat3 normal_mat;
-    mat4 model;
+    mat4 Mvp;
+    mat3 NormalMat;
+    mat4 Model;
 } gs_in[];
 
 out GS_OUT {
@@ -81,16 +81,16 @@ void createTube(vec3 pos1, vec3 pos2, float r1, float r2) {
         vec3 p1 = pos1 + r1 * normal;
         vec3 p2 = pos2 + r2 * normal;
 
-        gl_Position = gs_in[0].mvp * vec4(p1, 1.0);
-        gs_out.FragPos = vec3(gs_in[0].model * vec4(p1, 1.0));
+        gl_Position = gs_in[0].Mvp * vec4(p1, 1.0);
+        gs_out.FragPos = vec3(gs_in[0].Model * vec4(p1, 1.0));
         gs_out.FragPosLightSpace = lightSpace.matrix * vec4(gs_out.FragPos, 1.0);
-        gs_out.Normal = normalize(gs_in[0].normal_mat * normal);
+        gs_out.Normal = normalize(gs_in[0].NormalMat * normal);
         EmitVertex();
 
-        gl_Position = gs_in[1].mvp * vec4(p2, 1.0);
-        gs_out.FragPos = vec3(gs_in[1].model * vec4(p2, 1.0));
+        gl_Position = gs_in[1].Mvp * vec4(p2, 1.0);
+        gs_out.FragPos = vec3(gs_in[1].Model * vec4(p2, 1.0));
         gs_out.FragPosLightSpace = lightSpace.matrix * vec4(gs_out.FragPos, 1.0);
-        gs_out.Normal = normalize(gs_in[1].normal_mat * normal);
+        gs_out.Normal = normalize(gs_in[1].NormalMat * normal);
         EmitVertex();
     }
     EndPrimitive();
@@ -108,9 +108,8 @@ void main()
 
 uniform sampler2D shadowMap;
 uniform float specularStrength;
-uniform float brightness_mult = 1.0;
 
-uniform vec3 in_color;
+uniform vec3 color;
 
 uniform ViewPos {
     vec3 val;
@@ -193,7 +192,7 @@ void main()
     float shadow = ShadowCalculation(fs_in.FragPosLightSpace);
 
     // Calculate lighting value
-    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * in_color;
+    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * color;
 
     // check whether result is higher than some threshold, if so, output as bloom threshold color
     float brightness = dot(lighting, vec3(0.2126, 0.7152, 0.0722));

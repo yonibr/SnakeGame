@@ -397,7 +397,7 @@ class TextRenderer(Renderable):
 
     def render(self, proj: Matrix44) -> None:
         self.program.write_uniform('projection', proj)
-        self.program.set_uniform_value('text_color', self.color)
+        self.program.set_uniform_value('color', self.color)
 
         font = self.font
         self.program.set_uniform_value('charWidth', font.char_width)
@@ -512,7 +512,7 @@ class InstancedObject(Renderable):
         program = override_program if override_program else self.program
 
         if self.color is not None:
-            program.write_uniform('in_color', self.color)
+            program.write_uniform('color', self.color)
 
         if value_uniforms:
             for name, value in value_uniforms.items():
@@ -577,7 +577,7 @@ class Light(Renderable):
 
     def render(self) -> None:
         self.sphere.render(value_uniforms={
-            'is_light_source': True, 'brightness_mult': self.brightness
+            'isLightSource': True, 'brightnessMult': self.brightness
         })
 
 
@@ -662,11 +662,11 @@ class SnakeRenderer(Renderable):
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.body.render(
-            value_uniforms={'specularStrength': 0.1, 'is_light_source': False},
+            value_uniforms={'specularStrength': 0.1, 'isLightSource': False},
             override_program=override_program
         )
         self.eyes.render(
-            value_uniforms={'specularStrength': 1.0, 'is_light_source': False},
+            value_uniforms={'specularStrength': 1.0, 'isLightSource': False},
             override_program=override_program
         )
 
@@ -712,7 +712,7 @@ class WallRenderer(Renderable):
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.instanced_cube.render(
-            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            value_uniforms={'specularStrength': 0.6, 'isLightSource': False},
             override_program=override_program
         )
 
@@ -746,7 +746,7 @@ class FoodRenderer(Renderable):
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.sphere.render(
-            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            value_uniforms={'specularStrength': 0.6, 'isLightSource': False},
             override_program=override_program
         )
 
@@ -794,11 +794,11 @@ class BoardRenderer(Renderable):
 
     def render(self, override_program: Optional[ShaderProgram]=None) -> None:
         self.floor.render(
-            value_uniforms={'specularStrength': 0.6, 'is_light_source': False},
+            value_uniforms={'specularStrength': 0.6, 'isLightSource': False},
             override_program=override_program
         )
         self.grid.render(
-            value_uniforms={'specularStrength': 0.0, 'is_light_source': False},
+            value_uniforms={'specularStrength': 0.0, 'isLightSource': False},
             override_program=override_program
         )
 
@@ -1003,24 +1003,24 @@ class TaperedSnakeRenderer(Renderable):
             self.clear_vao_instance[body_program] = False
 
         body_program.set_uniform_value('specularStrength', 0.1)
-        body_program.set_uniform_value('in_color', self.color)
+        body_program.set_uniform_value('color', self.color)
 
         self.tail.render(body_program.program, mode=moderngl.LINE_STRIP)
 
         self.curve_spheres.render(
             override_program=override_program, value_uniforms={
-                'specularStrength': 0.1, 'is_light_source': False
+                'specularStrength': 0.1, 'isLightSource': False
             }
         )
 
         self.head.render(
             override_program=override_program, value_uniforms={
-                'specularStrength': 0.1, 'is_light_source': False
+                'specularStrength': 0.1, 'isLightSource': False
             }
         )
         self.eyes.render(
             override_program=override_program, value_uniforms={
-                'specularStrength': 1.0, 'is_light_source': False
+                'specularStrength': 1.0, 'isLightSource': False
             }
         )
 
@@ -1088,7 +1088,7 @@ class HDRBloomRenderer(Renderable):
 
         # Set up programs
         self.blur_program = state.shader_program_repo['blur']
-        prog_name = 'bloom_final_fxaa2'
+        prog_name = 'bloom_final_fxaa'
         prog = state.shader_program_repo[prog_name].program
         prog['scene'].value = 0
         prog['bloomBlur'].value = 1

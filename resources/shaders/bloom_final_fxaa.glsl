@@ -1,5 +1,20 @@
 #version 330 core
 
+/**
+ * @license
+ * Copyright (c) 2011 NVIDIA Corporation. All rights reserved.
+ *
+ * TO  THE MAXIMUM  EXTENT PERMITTED  BY APPLICABLE  LAW, THIS SOFTWARE  IS PROVIDED
+ * *AS IS*  AND NVIDIA AND  ITS SUPPLIERS DISCLAIM  ALL WARRANTIES,  EITHER  EXPRESS
+ * OR IMPLIED, INCLUDING, BUT NOT LIMITED  TO, NONINFRINGEMENT,IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  IN NO EVENT SHALL  NVIDIA 
+ * OR ITS SUPPLIERS BE  LIABLE  FOR  ANY  DIRECT, SPECIAL,  INCIDENTAL,  INDIRECT,  OR  
+ * CONSEQUENTIAL DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION,  DAMAGES FOR LOSS 
+ * OF BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, OR ANY 
+ * OTHER PECUNIARY LOSS) ARISING OUT OF THE  USE OF OR INABILITY  TO USE THIS SOFTWARE, 
+ * EVEN IF NVIDIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+ */
+
 #if defined VERTEX_SHADER
 
 in vec3 in_position;
@@ -17,220 +32,258 @@ void main()
 
 uniform sampler2D scene;
 uniform sampler2D bloomBlur;
-
 uniform float exposure = 1.0;
 
 in vec2 TexCoords;
 
 out vec4 FragColor;
 
-float FxaaLuma(vec4 rgba) {
-    return rgba.w;
+/*
+FXAA_PRESET - Choose compile-in knob preset 0-5.
+------------------------------------------------------------------------------
+FXAA_EDGE_THRESHOLD - The minimum amount of local contrast required 
+                      to apply algorithm.
+                      1.0/3.0  - too little
+                      1.0/4.0  - good start
+                      1.0/8.0  - applies to more edges
+                      1.0/16.0 - overkill
+------------------------------------------------------------------------------
+FXAA_EDGE_THRESHOLD_MIN - Trims the algorithm from processing darks.
+                          Perf optimization.
+                          1.0/32.0 - visible limit (smaller isn't visible)
+                          1.0/16.0 - good compromise
+                          1.0/12.0 - upper limit (seeing artifacts)
+------------------------------------------------------------------------------
+FXAA_SEARCH_STEPS - Maximum number of search steps for end of span.
+------------------------------------------------------------------------------
+FXAA_SEARCH_THRESHOLD - Controls when to stop searching.
+                        1.0/4.0 - seems to be the best quality wise
+------------------------------------------------------------------------------
+FXAA_SUBPIX_TRIM - Controls sub-pixel aliasing removal.
+                   1.0/2.0 - low removal
+                   1.0/3.0 - medium removal
+                   1.0/4.0 - default removal
+                   1.0/8.0 - high removal
+                   0.0 - complete removal
+------------------------------------------------------------------------------
+FXAA_SUBPIX_CAP - Insures fine detail is not completely removed.
+                  This is important for the transition of sub-pixel detail,
+                  like fences and wires.
+                  3.0/4.0 - default (medium amount of filtering)
+                  7.0/8.0 - high amount of filtering
+                  1.0 - no capping of sub-pixel aliasing removal
+*/
+
+#ifndef FXAA_PRESET
+    #define FXAA_PRESET 6
+#endif
+#if (FXAA_PRESET == 3)
+    #define FXAA_EDGE_THRESHOLD      (1.0/8.0)
+    #define FXAA_EDGE_THRESHOLD_MIN  (1.0/16.0)
+    #define FXAA_SEARCH_STEPS        16
+    #define FXAA_SEARCH_THRESHOLD    (1.0/4.0)
+    #define FXAA_SUBPIX_CAP          (3.0/4.0)
+    #define FXAA_SUBPIX_TRIM         (1.0/4.0)
+#endif
+#if (FXAA_PRESET == 4)
+    #define FXAA_EDGE_THRESHOLD      (1.0/8.0)
+    #define FXAA_EDGE_THRESHOLD_MIN  (1.0/24.0)
+    #define FXAA_SEARCH_STEPS        24
+    #define FXAA_SEARCH_THRESHOLD    (1.0/4.0)
+    #define FXAA_SUBPIX_CAP          (3.0/4.0)
+    #define FXAA_SUBPIX_TRIM         (1.0/4.0)
+#endif
+#if (FXAA_PRESET == 5)
+    #define FXAA_EDGE_THRESHOLD      (1.0/8.0)
+    #define FXAA_EDGE_THRESHOLD_MIN  (1.0/24.0)
+    #define FXAA_SEARCH_STEPS        32
+    #define FXAA_SEARCH_THRESHOLD    (1.0/4.0)
+    #define FXAA_SUBPIX_CAP          (3.0/4.0)
+    #define FXAA_SUBPIX_TRIM         (1.0/4.0)
+#endif
+#if (FXAA_PRESET == 6)
+    #define FXAA_EDGE_THRESHOLD      (1.0/10.0)
+    #define FXAA_EDGE_THRESHOLD_MIN  (1.0/28.0)
+    #define FXAA_SEARCH_STEPS        40
+    #define FXAA_SEARCH_THRESHOLD    (1.0/4.0)
+    #define FXAA_SUBPIX_CAP          (3.0/4.0)
+    #define FXAA_SUBPIX_TRIM         (1.0/4.0)
+#endif
+
+#define FXAA_SUBPIX_TRIM_SCALE (1.0/(1.0 - FXAA_SUBPIX_TRIM))
+
+// Return the luma, the estimation of luminance from rgb inputs.
+// This approximates luma using one FMA instruction,
+// skipping normalization and tossing out blue.
+// FxaaLuma() will range 0.0 to 2.963210702.
+float FxaaLuma(vec3 rgb) {
+    return rgb.y * (0.587/0.299) + rgb.x;
 }
 
-vec4 FxaaPixelShader(
-    vec2 pos,
-    sampler2D tex,
-    vec2 fxaaQualityRcpFrame,
-    float fxaaQualitySubpix,
-    float fxaaQualityEdgeThreshold,
-    float fxaaQualityEdgeThresholdMin
-) {
-    vec2 posM;
-    posM.x = pos.x;
-    posM.y = pos.y;
-    vec4 rgbyM = textureLod(tex, posM, 0.0);
-    float lumaS = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(0, 1)));
-    float lumaE = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(1, 0)));
-    float lumaN = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(0, -1)));
-    float lumaW = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(-1, 0)));
-    float maxSM = max(lumaS, rgbyM.w);
-    float minSM = min(lumaS, rgbyM.w);
-    float maxESM = max(lumaE, maxSM);
-    float minESM = min(lumaE, minSM);
-    float maxWN = max(lumaN, lumaW);
-    float minWN = min(lumaN, lumaW);
-    float rangeMax = max(maxWN, maxESM);
-    float rangeMin = min(minWN, minESM);
-    float rangeMaxScaled = rangeMax * fxaaQualityEdgeThreshold;
-    float range = rangeMax - rangeMin;
-    float rangeMaxClamped = max(fxaaQualityEdgeThresholdMin, rangeMaxScaled);
-    bool earlyExit = range < rangeMaxClamped;
-    if (earlyExit)
-    return rgbyM;
+vec3 FxaaLerp3(vec3 a, vec3 b, float amountOfA) {
+    return (vec3(-amountOfA) * b) + ((a * vec3(amountOfA)) + b);
+}
 
-    float lumaNW = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(-1, -1)));
-    float lumaSE = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(1, 1)));
-    float lumaNE = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(1, -1)));
-    float lumaSW = FxaaLuma(textureLodOffset(tex, posM, 0.0, ivec2(-1, 1)));
-    float lumaNS = lumaN + lumaS;
-    float lumaWE = lumaW + lumaE;
-    float subpixRcpRange = 1.0/range;
-    float subpixNSWE = lumaNS + lumaWE;
-    float edgeHorz1 = (-2.0 * rgbyM.w) + lumaNS;
-    float edgeVert1 = (-2.0 * rgbyM.w) + lumaWE;
-    float lumaNESE = lumaNE + lumaSE;
-    float lumaNWNE = lumaNW + lumaNE;
-    float edgeHorz2 = (-2.0 * lumaE) + lumaNESE;
-    float edgeVert2 = (-2.0 * lumaN) + lumaNWNE;
-    float lumaNWSW = lumaNW + lumaSW;
-    float lumaSWSE = lumaSW + lumaSE;
-    float edgeHorz4 = (abs(edgeHorz1) * 2.0) + abs(edgeHorz2);
-    float edgeVert4 = (abs(edgeVert1) * 2.0) + abs(edgeVert2);
-    float edgeHorz3 = (-2.0 * lumaW) + lumaNWSW;
-    float edgeVert3 = (-2.0 * lumaS) + lumaSWSE;
-    float edgeHorz = abs(edgeHorz3) + edgeHorz4;
-    float edgeVert = abs(edgeVert3) + edgeVert4;
-    float subpixNWSWNESE = lumaNWSW + lumaNESE;
-    float lengthSign = fxaaQualityRcpFrame.x;
+vec4 FxaaTexOff(sampler2D tex, vec2 pos, ivec2 off, vec2 rcpFrame) {
+    float x = pos.x + float(off.x) * rcpFrame.x;
+    float y = pos.y + float(off.y) * rcpFrame.y;
+    return texture(tex, vec2(x, y));
+}
+
+// pos is the output of FxaaVertexShader interpolated across screen.
+// xy -> actual texture position {0.0 to 1.0}
+// rcpFrame should be a uniform equal to  {1.0/frameWidth, 1.0/frameHeight}
+vec3 FxaaPixelShader(vec2 pos, sampler2D tex, vec2 rcpFrame)
+{
+    vec3 rgbN = FxaaTexOff(tex, pos.xy, ivec2( 0,-1), rcpFrame).xyz;
+    vec3 rgbW = FxaaTexOff(tex, pos.xy, ivec2(-1, 0), rcpFrame).xyz;
+    vec3 rgbM = FxaaTexOff(tex, pos.xy, ivec2( 0, 0), rcpFrame).xyz;
+    vec3 rgbE = FxaaTexOff(tex, pos.xy, ivec2( 1, 0), rcpFrame).xyz;
+    vec3 rgbS = FxaaTexOff(tex, pos.xy, ivec2( 0, 1), rcpFrame).xyz;
+    
+    float lumaN = FxaaLuma(rgbN);
+    float lumaW = FxaaLuma(rgbW);
+    float lumaM = FxaaLuma(rgbM);
+    float lumaE = FxaaLuma(rgbE);
+    float lumaS = FxaaLuma(rgbS);
+    float rangeMin = min(lumaM, min(min(lumaN, lumaW), min(lumaS, lumaE)));
+    float rangeMax = max(lumaM, max(max(lumaN, lumaW), max(lumaS, lumaE)));
+    
+    float range = rangeMax - rangeMin;
+    if(range < max(FXAA_EDGE_THRESHOLD_MIN, rangeMax * FXAA_EDGE_THRESHOLD))
+    {
+        return rgbM;
+    }
+    
+    vec3 rgbL = rgbN + rgbW + rgbM + rgbE + rgbS;
+    
+    float lumaL = (lumaN + lumaW + lumaE + lumaS) * 0.25;
+    float rangeL = abs(lumaL - lumaM);
+    float blendL = max(0.0, (rangeL / range) - FXAA_SUBPIX_TRIM) * FXAA_SUBPIX_TRIM_SCALE; 
+    blendL = min(FXAA_SUBPIX_CAP, blendL);
+    
+    vec3 rgbNW = FxaaTexOff(tex, pos.xy, ivec2(-1,-1), rcpFrame).xyz;
+    vec3 rgbNE = FxaaTexOff(tex, pos.xy, ivec2( 1,-1), rcpFrame).xyz;
+    vec3 rgbSW = FxaaTexOff(tex, pos.xy, ivec2(-1, 1), rcpFrame).xyz;
+    vec3 rgbSE = FxaaTexOff(tex, pos.xy, ivec2( 1, 1), rcpFrame).xyz;
+    rgbL += (rgbNW + rgbNE + rgbSW + rgbSE);
+    rgbL *= vec3(1.0/9.0);
+    
+    float lumaNW = FxaaLuma(rgbNW);
+    float lumaNE = FxaaLuma(rgbNE);
+    float lumaSW = FxaaLuma(rgbSW);
+    float lumaSE = FxaaLuma(rgbSE);
+    
+    float edgeVert = 
+        abs((0.25 * lumaNW) + (-0.5 * lumaN) + (0.25 * lumaNE)) +
+        abs((0.50 * lumaW ) + (-1.0 * lumaM) + (0.50 * lumaE )) +
+        abs((0.25 * lumaSW) + (-0.5 * lumaS) + (0.25 * lumaSE));
+    float edgeHorz = 
+        abs((0.25 * lumaNW) + (-0.5 * lumaW) + (0.25 * lumaSW)) +
+        abs((0.50 * lumaN ) + (-1.0 * lumaM) + (0.50 * lumaS )) +
+        abs((0.25 * lumaNE) + (-0.5 * lumaE) + (0.25 * lumaSE));
+        
     bool horzSpan = edgeHorz >= edgeVert;
-    float subpixA = subpixNSWE * 2.0 + subpixNWSWNESE;
-    if (!horzSpan) lumaN = lumaW;
-    if (!horzSpan) lumaS = lumaE;
-    if (horzSpan) lengthSign = fxaaQualityRcpFrame.y;
-    float subpixB = (subpixA * (1.0/12.0)) - rgbyM.w;
-    float gradientN = lumaN - rgbyM.w;
-    float gradientS = lumaS - rgbyM.w;
-    float lumaNN = lumaN + rgbyM.w;
-    float lumaSS = lumaS + rgbyM.w;
-    bool pairN = abs(gradientN) >= abs(gradientS);
-    float gradient = max(abs(gradientN), abs(gradientS));
-    if (pairN) lengthSign = -lengthSign;
-    float subpixC = clamp(abs(subpixB) * subpixRcpRange, 0.0, 1.0);
-    vec2 posB;
-    posB.x = posM.x;
-    posB.y = posM.y;
-    vec2 offNP;
-    offNP.x = (!horzSpan) ? 0.0 : fxaaQualityRcpFrame.x;
-    offNP.y = (horzSpan) ? 0.0 : fxaaQualityRcpFrame.y;
-    if (!horzSpan) posB.x += lengthSign * 0.5;
-    if (horzSpan) posB.y += lengthSign * 0.5;
+    float lengthSign = horzSpan ? -rcpFrame.y : -rcpFrame.x;
+    
+    if(!horzSpan)
+    {
+        lumaN = lumaW;
+        lumaS = lumaE;
+    }
+    
+    float gradientN = abs(lumaN - lumaM);
+    float gradientS = abs(lumaS - lumaM);
+    lumaN = (lumaN + lumaM) * 0.5;
+    lumaS = (lumaS + lumaM) * 0.5;
+    
+    if (gradientN < gradientS)
+    {
+        lumaN = lumaS;
+        lumaN = lumaS;
+        gradientN = gradientS;
+        lengthSign *= -1.0;
+    }
+    
     vec2 posN;
-    posN.x = posB.x - offNP.x * 1.0;
-    posN.y = posB.y - offNP.y * 1.0;
-    vec2 posP;
-    posP.x = posB.x + offNP.x * 1.0;
-    posP.y = posB.y + offNP.y * 1.0;
-    float subpixD = ((-2.0)*subpixC) + 3.0;
-    float lumaEndN = FxaaLuma(textureLod(tex, posN, 0.0));
-    float subpixE = subpixC * subpixC;
-    float lumaEndP = FxaaLuma(textureLod(tex, posP, 0.0));
-    if (!pairN) lumaNN = lumaSS;
-    float gradientScaled = gradient * 1.0/4.0;
-    float lumaMM = rgbyM.w - lumaNN * 0.5;
-    float subpixF = subpixD * subpixE;
-    bool lumaMLTZero = lumaMM < 0.0;
-    lumaEndN -= lumaNN * 0.5;
-    lumaEndP -= lumaNN * 0.5;
-    bool doneN = abs(lumaEndN) >= gradientScaled;
-    bool doneP = abs(lumaEndP) >= gradientScaled;
-    if (!doneN) posN.x -= offNP.x * 1.5;
-    if (!doneN) posN.y -= offNP.y * 1.5;
-    bool doneNP = (!doneN) || (!doneP);
-    if (!doneP) posP.x += offNP.x * 1.5;
-    if (!doneP) posP.y += offNP.y * 1.5;
-    if (doneNP) {
-        if (!doneN) lumaEndN = FxaaLuma(textureLod(tex, posN.xy, 0.0));
-        if (!doneP) lumaEndP = FxaaLuma(textureLod(tex, posP.xy, 0.0));
-        if (!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
-        if (!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
-        doneN = abs(lumaEndN) >= gradientScaled;
-        doneP = abs(lumaEndP) >= gradientScaled;
-        if (!doneN) posN.x -= offNP.x * 2.0;
-        if (!doneN) posN.y -= offNP.y * 2.0;
-        doneNP = (!doneN) || (!doneP);
-        if (!doneP) posP.x += offNP.x * 2.0;
-        if (!doneP) posP.y += offNP.y * 2.0;
-        if (doneNP) {
-            if (!doneN) lumaEndN = FxaaLuma(textureLod(tex, posN.xy, 0.0));
-            if (!doneP) lumaEndP = FxaaLuma(textureLod(tex, posP.xy, 0.0));
-            if (!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
-            if (!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
-            doneN = abs(lumaEndN) >= gradientScaled;
-            doneP = abs(lumaEndP) >= gradientScaled;
-            if (!doneN) posN.x -= offNP.x * 2.0;
-            if (!doneN) posN.y -= offNP.y * 2.0;
-            doneNP = (!doneN) || (!doneP);
-            if (!doneP) posP.x += offNP.x * 2.0;
-            if (!doneP) posP.y += offNP.y * 2.0;
-            if (doneNP) {
-                if (!doneN) lumaEndN = FxaaLuma(textureLod(tex, posN.xy, 0.0));
-                if (!doneP) lumaEndP = FxaaLuma(textureLod(tex, posP.xy, 0.0));
-                if (!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
-                if (!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
-                doneN = abs(lumaEndN) >= gradientScaled;
-                doneP = abs(lumaEndP) >= gradientScaled;
-                if (!doneN) posN.x -= offNP.x * 4.0;
-                if (!doneN) posN.y -= offNP.y * 4.0;
-                doneNP = (!doneN) || (!doneP);
-                if (!doneP) posP.x += offNP.x * 4.0;
-                if (!doneP) posP.y += offNP.y * 4.0;
-                if (doneNP) {
-                    if (!doneN) lumaEndN = FxaaLuma(textureLod(tex, posN.xy, 0.0));
-                    if (!doneP) lumaEndP = FxaaLuma(textureLod(tex, posP.xy, 0.0));
-                    if (!doneN) lumaEndN = lumaEndN - lumaNN * 0.5;
-                    if (!doneP) lumaEndP = lumaEndP - lumaNN * 0.5;
-                    doneN = abs(lumaEndN) >= gradientScaled;
-                    doneP = abs(lumaEndP) >= gradientScaled;
-                    if (!doneN) posN.x -= offNP.x * 12.0;
-                    if (!doneN) posN.y -= offNP.y * 12.0;
-                    doneNP = (!doneN) || (!doneP);
-                    if (!doneP) posP.x += offNP.x * 12.0;
-                    if (!doneP) posP.y += offNP.y * 12.0;
-                }
-            }
+    posN.x = pos.x + (horzSpan ? 0.0 : lengthSign * 0.5);
+    posN.y = pos.y + (horzSpan ? lengthSign * 0.5 : 0.0);
+    
+    gradientN *= FXAA_SEARCH_THRESHOLD;
+    
+    vec2 posP = posN;
+    vec2 offNP = horzSpan ? vec2(rcpFrame.x, 0.0) : vec2(0.0, rcpFrame.y); 
+    float lumaEndN = lumaN;
+    float lumaEndP = lumaN;
+    bool doneN = false;
+    bool doneP = false;
+    posN += offNP * vec2(-1.0, -1.0);
+    posP += offNP * vec2( 1.0,  1.0);
+    
+    for(int i = 0; i < FXAA_SEARCH_STEPS; i++) {
+        if(!doneN)
+        {
+            lumaEndN = FxaaLuma(texture(tex, posN.xy).xyz);
+        }
+        if(!doneP)
+        {
+            lumaEndP = FxaaLuma(texture(tex, posP.xy).xyz);
+        }
+        
+        doneN = doneN || (abs(lumaEndN - lumaN) >= gradientN);
+        doneP = doneP || (abs(lumaEndP - lumaN) >= gradientN);
+        
+        if(doneN && doneP)
+        {
+            break;
+        }
+        if(!doneN)
+        {
+            posN -= offNP;
+        }
+        if(!doneP)
+        {
+            posP += offNP;
         }
     }
-
-    float dstN = posM.x - posN.x;
-    float dstP = posP.x - posM.x;
-    if (!horzSpan) dstN = posM.y - posN.y;
-    if (!horzSpan) dstP = posP.y - posM.y;
-
-    bool goodSpanN = (lumaEndN < 0.0) != lumaMLTZero;
-    float spanLength = (dstP + dstN);
-    bool goodSpanP = (lumaEndP < 0.0) != lumaMLTZero;
-    float spanLengthRcp = 1.0/spanLength;
-
+    
+    float dstN = horzSpan ? pos.x - posN.x : pos.y - posN.y;
+    float dstP = horzSpan ? posP.x - pos.x : posP.y - pos.y;
     bool directionN = dstN < dstP;
-    float dst = min(dstN, dstP);
-    bool goodSpan = directionN ? goodSpanN : goodSpanP;
-    float subpixG = subpixF * subpixF;
-    float pixelOffset = (dst * (-spanLengthRcp)) + 0.5;
-    float subpixH = subpixG * fxaaQualitySubpix;
+    lumaEndN = directionN ? lumaEndN : lumaEndP;
+    
+    if(((lumaM - lumaN) < 0.0) == ((lumaEndN - lumaN) < 0.0))
+    {
+        lengthSign = 0.0;
+    }
+ 
 
-    float pixelOffsetGood = goodSpan ? pixelOffset : 0.0;
-    float pixelOffsetSubpix = max(pixelOffsetGood, subpixH);
-    if (!horzSpan) posM.x += pixelOffsetSubpix * lengthSign;
-    if (horzSpan) posM.y += pixelOffsetSubpix * lengthSign;
-
-    return vec4(textureLod(tex, posM, 0.0).xyz, rgbyM.w);
+    float spanLength = (dstP + dstN);
+    dstN = directionN ? dstN : dstP;
+    float subPixelOffset = (0.5 + (dstN * (-1.0/spanLength))) * lengthSign;
+    vec3 rgbF = texture(tex, vec2(
+        pos.x + (horzSpan ? 0.0 : subPixelOffset),
+        pos.y + (horzSpan ? subPixelOffset : 0.0))).xyz;
+    return FxaaLerp3(rgbL, rgbF, blendL); 
 }
 
 void main()
 {
     const float gamma = 2.2;
-    const vec3 correction_vec = vec3(1.0 / gamma);
+    const vec3 correctionVec = vec3(1.0 / gamma);
 
-    // FXAA on the HDR texture
-    vec4 hdrColor = FxaaPixelShader(
-        TexCoords,
-        scene,
-        1.0 / textureSize(scene, 0),
-        0.8,
-        1.0 / 10.0,
-        1.0 / 24.0
-    );
+    vec3 hdrColor = FxaaPixelShader(TexCoords, scene, 1.0 / textureSize(scene, 0));
 
     // Add in bloom
-    hdrColor.rgb += texture(bloomBlur, TexCoords).rgb;
+    hdrColor += texture(bloomBlur, TexCoords).rgb;
 
     // Tone mapping
-    vec3 result = vec3(1.0) - exp(-hdrColor.rgb * exposure);
+    vec3 result = vec3(1.0) - exp(-hdrColor * exposure);
 
     // Gamma correction
-    result = pow(result, correction_vec);
+    result = pow(result, correctionVec);
 
-    FragColor = vec4(result, hdrColor.a);
+    FragColor = vec4(result, 1.0);
 }
+
 #endif
