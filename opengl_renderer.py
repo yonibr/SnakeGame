@@ -44,17 +44,13 @@ class ShaderProgram(object):
     def write_uniform(self, name: str, value: Any) -> None:
         if name in self.uniforms:
             self.uniforms[name].write(value)
-        # else:
-            # print(f'Trying to set uniform "{name}" which is not present in program {self.name}.')
 
     def set_uniform_value(self, name: str, value: Any) -> None:
         if name in self.uniforms:
             self.uniforms[name].value = value
-        # else:
-            # print(f'Trying to set uniform "{name}" which is not present in program {self.name}.')
 
 
-class ProgramRepository(MappingABC):  # FIXME: safer path handling
+class ProgramRepository(MappingABC):
     def __init__(self, res_dir: str='shaders'):
         self.programs = {}
         self.dir = res_dir
