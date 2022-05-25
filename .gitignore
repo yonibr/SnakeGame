@@ -7,3 +7,5 @@ __pycache__
 /Include/site/python3.6/pygame/
 /Lib/
 tb_logs
+restats
+snake.db
