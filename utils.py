@@ -42,6 +42,18 @@ class HorizontalTextAlignment(Enum):
     RIGHT = 'right'
 
 
+class RectanglePoint(Enum):
+    TOP_LEFT = 'topleft'
+    MID_TOP = 'midtop'
+    TOP_RIGHT = 'topright'
+    MID_LEFT = 'midleft'
+    CENTER = 'center'
+    MID_RIGHT = 'midright'
+    BOTTOM_LEFT = 'bottomleft'
+    MID_BOTTOM = 'midbottom'
+    BOTTOM_RIGHT = 'bottomright'
+
+
 # Modified from https://stackoverflow.com/a/48709380/2892775
 class SetInterval(object):
     def __init__(

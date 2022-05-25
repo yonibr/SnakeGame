@@ -1,7 +1,7 @@
 # TODO:
 #   - Print out high scores in CLRenderer
 #   - Make curses renderer work even if curses.has_colors() is false
-#   - Make it so scale factor decreases if window size would be to big for the screen
+#   - Make it so scale factor decreases if window size would be too big for the screen
 #   - Make font size depend on scale factor
 #   - Fix PGRenderer2 not working at very low FPS
 #   - Display names in high scores
@@ -50,6 +50,7 @@ from utils import (
     get_high_scores,
     HorizontalTextAlignment,
     parse_key,
+    RectanglePoint,
     SetInterval,
     update_high_scores
 )
@@ -203,7 +204,7 @@ class PGRenderer(Renderer):
             self,
             text: str,
             pos: Tuple[int, int],
-            which_point: str,
+            which_point: RectanglePoint,
             font_size: int,
             color: Tuple[int, int, int],
             center_lines_vertically: bool=True,
@@ -222,7 +223,7 @@ class PGRenderer(Renderer):
         for text_line, offset in zip(text_lines, offsets):
             text_surface, text_rect = font.render(text_line, color)
             new_y = pos[1] + int(offset * (font_size + line_spacing))
-            setattr(text_rect, which_point, (pos[0], new_y))
+            setattr(text_rect, which_point.value, (pos[0], new_y))
 
             self.screen.blit(text_surface, text_rect)
 
@@ -232,17 +233,17 @@ class PGRenderer(Renderer):
 
     def draw_fps(self) -> pg.Rect:
         return self.draw_text(
-            f'FPS: {self.fps: 0.1f}', (6, 6), 'topleft', 22, self.theme.text
+            f'FPS: {self.fps: 0.1f}', (6, 6), RectanglePoint.TOP_LEFT, 22, self.theme.text
         )[0]
 
     def draw_score(self, score: int) -> pg.Rect:
         return self.draw_text(
-            f'Score: {score}', (self.width / 2, 6), 'midtop', 22, self.theme.text
+            f'Score: {score}', (self.width / 2, 6), RectanglePoint.MID_TOP, 22, self.theme.text
         )[0]
 
     def draw_length(self, length: int) -> pg.Rect:
         return self.draw_text(
-            f'Length: {length}', (self.width - 6, 6), 'topright', 22, self.theme.text
+            f'Length: {length}', (self.width - 6, 6), RectanglePoint.TOP_RIGHT, 22, self.theme.text
         )[0]
 
     def draw_high_scores(self, top_n=5) -> pg.Rect:
@@ -260,12 +261,12 @@ class PGRenderer(Renderer):
         scores_top = hline_y + line_spacing * 2
 
         self.draw_text(
-            'Score', (self.width // 2 - font_size, self.height // 2), 'topright',
+            'Score', (self.width // 2 - font_size, self.height // 2), RectanglePoint.TOP_RIGHT,
             font_size, color
         )
         
         self.draw_text(
-            'Length', (self.width // 2 + font_size, self.height // 2), 'topleft',
+            'Length', (self.width // 2 + font_size, self.height // 2), RectanglePoint.TOP_LEFT,
             font_size, color
         )
 
@@ -274,12 +275,13 @@ class PGRenderer(Renderer):
         gfxdraw.hline(self.screen, left_bound, right_bound, hline_y, color)
 
         self.draw_text(
-            '\n'.join(scores), (self.width // 2 - font_size * 2, scores_top), 'midtop',
-            font_size, color, center_lines_vertically=False, line_spacing=line_spacing
+            '\n'.join(scores), (self.width // 2 - font_size * 2, scores_top),
+            RectanglePoint.MID_TOP, font_size, color, center_lines_vertically=False,
+            line_spacing=line_spacing
         )
 
         self.draw_text(
-            '\n'.join(lengths), (self.width // 2 + font_size * 2, scores_top), 'midtop',
+            '\n'.join(lengths), (self.width // 2 + font_size * 2, scores_top), RectanglePoint.MID_TOP,
             font_size, color, center_lines_vertically=False, line_spacing=line_spacing
         )
         
@@ -289,8 +291,8 @@ class PGRenderer(Renderer):
 
     def draw_level_name(self) -> pg.Rect:
         rect = self.draw_text(
-            f'Level: {state.level_name}', (self.width / 2, self.height - 2), 'midbottom', 22,
-            self.theme.text
+            f'Level: {state.level_name}', (self.width / 2, self.height - 2),
+            RectanglePoint.MID_BOTTOM, 22, self.theme.text
         )[0]
 
         return rect
@@ -300,7 +302,7 @@ class PGRenderer(Renderer):
             return [
                 *self.draw_text(
                     game_over_text(game, update_high_scores(game)),
-                    (self.width // 2, self.height // 5), 'center', 36, self.theme.text
+                    (self.width // 2, self.height // 5), RectanglePoint.CENTER, 36, self.theme.text
                 ),
                 self.draw_high_scores()
             ]
@@ -1486,7 +1488,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         if self.recreate_text_renderer['score']:
             self.score_renderer = TextRenderer(
                 self.font, f'Score: {score}', self.theme.text, self.viewport_width / 2,
-                self.viewport_height - 10, which_point='midtop'
+                self.viewport_height - 10, which_point=RectanglePoint.MID_TOP
             )
             self.recreate_text_renderer['score'] = False
         else:
@@ -1497,7 +1499,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         if self.recreate_text_renderer['length']:
             self.length_renderer = TextRenderer(
                 self.font, f'Length: {length}', self.theme.text, self.viewport_width - 10,
-                self.viewport_height - 10, which_point='topright'
+                self.viewport_height - 10, which_point=RectanglePoint.TOP_RIGHT
             )
             self.recreate_text_renderer['length'] = False
         else:
@@ -1508,7 +1510,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         if self.recreate_text_renderer['level']:
             self.level_renderer = TextRenderer(
                 self.font, f'Level: {state.level_name}', self.theme.text, self.viewport_width / 2,
-                10, which_point='midbottom'
+                10, which_point=RectanglePoint.MID_BOTTOM
             )
             self.recreate_text_renderer['level'] = False
         self.level_renderer.render(self.orthogonal_proj)
@@ -1520,8 +1522,8 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             text = game_over_text(self.game, update_high_scores(self.game))
             self.game_over_renderer = TextRenderer(
                 self.font, text, self.theme.text, self.viewport_width / 2,
-                self.viewport_height * 0.7, which_point='midbottom', line_spacing=12,
-                horizontal_alignment=HorizontalTextAlignment.CENTERED
+                self.viewport_height * 0.7, which_point=RectanglePoint.MID_BOTTOM,
+                line_spacing=12, horizontal_alignment=HorizontalTextAlignment.CENTERED
             )
             self.recreate_text_renderer['game_over'] = False
         self.game_over_renderer.render(self.orthogonal_proj)
@@ -1542,12 +1544,12 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
             self.high_scores_names_renderer = TextRenderer(
                 self.font, name_text, self.theme.text, middle - text_offset, top,
-                line_spacing=line_spacing, which_point='topright',
+                line_spacing=line_spacing, which_point=RectanglePoint.TOP_RIGHT,
                 horizontal_alignment=HorizontalTextAlignment.RIGHT
             )
             self.high_scores_scores_renderer = TextRenderer(
                 self.font, score_text, self.theme.text, middle, top, line_spacing=line_spacing,
-                which_point='midtop', horizontal_alignment=HorizontalTextAlignment.CENTERED
+                which_point=RectanglePoint.MID_TOP, horizontal_alignment=HorizontalTextAlignment.CENTERED
             )
             self.high_scores_lengths_renderer = TextRenderer(
                 self.font, length_text, self.theme.text, middle + text_offset, top,

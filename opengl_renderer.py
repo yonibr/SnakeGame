@@ -21,7 +21,7 @@ import state
 
 from snake import Game
 from themes import Color, Theme
-from utils import HorizontalTextAlignment
+from utils import HorizontalTextAlignment, RectanglePoint
 
 
 def get_viewport_dimensions() -> Tuple[int, int]:
@@ -226,8 +226,6 @@ class FontBook(MappingABC):
         return self.fonts[name_and_size]
 
 
-# TODO:
-#    - Enum for which_point
 class TextRenderer(Renderable):
     instance_number = 0
 
@@ -238,7 +236,7 @@ class TextRenderer(Renderable):
             color: Color,
             x: float,
             y: float,
-            which_point: str='topleft',
+            which_point: RectanglePoint=RectanglePoint.TOP_LEFT,
             line_spacing: int=0,
             horizontal_alignment: HorizontalTextAlignment=HorizontalTextAlignment.LEFT):
         self.program = state.shader_program_repo['font']
@@ -309,23 +307,23 @@ class TextRenderer(Renderable):
     def get_position_offset(self) -> Tuple[float, float]:
         which_point = self.which_point
 
-        if which_point == 'topleft':
+        if which_point == RectanglePoint.TOP_LEFT:
             return self.x, self.y
-        if which_point == 'midtop':
+        if which_point == RectanglePoint.MID_TOP:
             return self.x - self.width / 2, self.y
-        if which_point == 'topright':
+        if which_point == RectanglePoint.TOP_RIGHT:
             return self.x - self.width, self.y
-        if which_point == 'midleft':
+        if which_point == RectanglePoint.MID_LEFT:
             return self.x, self.y + self.height / 2
-        if which_point == 'center':
+        if which_point == RectanglePoint.CENTER:
             return self.x - self.width / 2, self.y + self.height / 2
-        if which_point == 'midright':
+        if which_point == RectanglePoint.MID_RIGHT:
             return self.x - self.width, self.y + self.height / 2
-        if which_point == 'bottomleft':
+        if which_point == RectanglePoint.BOTTOM_LEFT:
             return self.x, self.y + self.height
-        if which_point == 'midbottom':
+        if which_point == RectanglePoint.MID_BOTTOM:
             return self.x - self.width / 2, self.y + self.height
-        if which_point == 'bottomright':
+        if which_point == RectanglePoint.BOTTOM_RIGHT:
             return self.x + self.width, self.y + self.height
 
         raise ValueError(''.join([
