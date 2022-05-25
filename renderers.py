@@ -129,7 +129,7 @@ class PGRenderer(Renderer):
         pg.display.set_caption(f'Snake — {state.level_name}')
         self.clock = Clock()
 
-        self.font_type = pg.freetype.get_default_font()
+        self.font_type = 'resources/fonts/SFNSMono.ttf'
         self.fonts = dict()
 
         self.theme = themes[kwargs['theme']]
@@ -196,7 +196,7 @@ class PGRenderer(Renderer):
 
     def get_font(self, font_size: int) -> pg.freetype.Font:
         if font_size not in self.fonts:
-            self.fonts[font_size] = pg.freetype.SysFont(self.font_type, font_size)
+            self.fonts[font_size] = pg.freetype.Font(self.font_type, font_size)
         return self.fonts[font_size]
 
     def draw_text(
