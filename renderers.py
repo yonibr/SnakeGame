@@ -1,5 +1,4 @@
 # TODO:
-#   - Print out high scores in CLRenderer
 #   - Make curses renderer work even if curses.has_colors() is false
 #   - Make it so scale factor decreases if window size would be too big for the screen
 #   - Make font size depend on scale factor
@@ -993,6 +992,7 @@ class CLRenderer(Renderer):
 
     def game_over(self, game: Game) -> Optional[Sequence[pg.Rect]]:
         print(game_over_text(game, update_high_scores(game)))
+        print(get_high_scores(as_dataframe=True).to_string(index=False))
         self.loop.cancel()
 
 

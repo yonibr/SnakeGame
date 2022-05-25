@@ -182,7 +182,9 @@ def update_high_scores(game: Game, check_top_n: int=5) -> bool:
         return update_high_scores(game, check_top_n=check_top_n)
 
 
-def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str], List[str]]:
+def get_high_scores(
+        top_n: int=5,
+        as_dataframe: bool=False) -> Union[Tuple[List[str], List[str], List[str]], pd.DataFrame]:
     global db_conn
     try:
         high_scores_df = pd.read_sql(f'''
@@ -201,7 +203,7 @@ def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str], List[str]]:
             limit {top_n}
         ''', db_conn)
 
-        return (
+        return high_scores_df if as_dataframe else (
             high_scores_df.player_name.to_list(),
             high_scores_df.score.astype(str).to_list(),
             high_scores_df.length.astype(str).to_list()
@@ -209,4 +211,4 @@ def get_high_scores(top_n: int=5) -> Tuple[List[str], List[str], List[str]]:
     # If db_conn was created on a different thread, we need to re-create it
     except sl.ProgrammingError:
         db_conn = sl.connect('snake.db')
-        return get_high_scores(top_n=top_n)
+        return get_high_scores(top_n=top_n, as_dataframe=as_dataframe)
