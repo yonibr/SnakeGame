@@ -80,7 +80,8 @@ class SnakeEnv(gym.Env):
 
         return observation
 
-    def get_action_meanings(self):
+    @staticmethod
+    def get_action_meanings():
         return {0: 'Up', 1: 'Down', 2: 'Left', 3: 'Right', 4: 'No Change'}
 
     def reset(self) -> np.ndarray:
@@ -97,7 +98,7 @@ class SnakeEnv(gym.Env):
 
         return self.get_observation()
 
-    def step(self, action):
+    def step(self, action: int):
         direction = action_map.get(action)
 
         if direction:
@@ -318,6 +319,7 @@ def create_cnn_lstm_ppo2_model(
         gammas = [gamma_start]
 
     n_steps = start_steps
+    step_incr_val = 0
     if step_incr_freq > 0 and start_steps != end_steps:
         step_incr_val = step_incr_freq * (end_steps - start_steps) // taper_steps
 

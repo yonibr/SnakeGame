@@ -759,7 +759,8 @@ class PGRenderer3(PGRenderer2):
         # Update the dirty rectangles
         pg.display.update(dirty_rects)
 
-    def get_relative_direction(self, this_node: Node, relative_to: Node) -> RelativeDirection:
+    @staticmethod
+    def get_relative_direction(this_node: Node, relative_to: Node) -> RelativeDirection:
         if this_node.y < relative_to.y:
             return RelativeDirection.ABOVE
         if this_node.y > relative_to.y:
@@ -768,8 +769,8 @@ class PGRenderer3(PGRenderer2):
             return RelativeDirection.LEFT_OF
         return RelativeDirection.RIGHT_OF
 
+    @staticmethod
     def get_bend_poly(
-            self,
             start_angle: float,
             end_angle: float,
             start_scale: int,
@@ -784,8 +785,8 @@ class PGRenderer3(PGRenderer2):
 
         return [*zip(x.tolist(), y.tolist()), connecting_point, center_point]
 
+    @staticmethod
     def get_interp_poly(
-            self,
             start_pt: Tuple[int, int],
             inter_pt: Tuple[int, int],
             end_pt: Tuple[int, int],
@@ -1293,7 +1294,9 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
 
         self.create_window()
         self.timer = Timer()
-        super().__init__(ctx=self.wnd.ctx, wnd=self.wnd, timer=self.timer, **kwargs)
+        mglw.WindowConfig.__init__(
+            self, ctx=self.wnd.ctx, wnd=self.wnd, timer=self.timer, **kwargs
+        )
         Renderer.__init__(self)
         self.wnd.config = self
         self.wnd.fullscreen_key = self.wnd.keys.F
