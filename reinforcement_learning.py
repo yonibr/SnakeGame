@@ -2,12 +2,14 @@ import gym
 import numpy as np
 import tensorflow as tf
 
-from stable_baselines import ACER, DQN, PPO2
+from stable_baselines import PPO2
 from stable_baselines.common import make_vec_env
 from stable_baselines.common.callbacks import BaseCallback
 from stable_baselines.common.schedules import Schedule
 from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
 from typing import Any, Optional, Sequence, Tuple
+
+from stable_baselines.common.vec_env import VecEnv
 
 import state
 
@@ -24,12 +26,6 @@ action_map = {
     3: Direction.right()
 }
 
-direction_state_map = {
-    'up': 4,
-    'down': 5,
-    'left': 6,
-    'right': 7
-}
 
 rng = np.random.default_rng()
 
@@ -143,6 +139,12 @@ class SnakeEnv(gym.Env):
         self.volume = board_interior_size - inner_wall_size
         self.food_multiplier = board_interior_size / self.volume
 
+    def render(self, mode: str='human'):
+        if mode == 'human':
+            print(self.game)
+        else:
+            raise NotImplementedError()
+
 
 def modified_cnn(scaled_images, **kwargs):
     activ = tf.nn.relu
@@ -197,6 +199,7 @@ def modified_cnn4(scaled_images, **kwargs):
     layer_3 = conv_to_fc(layer_3)
     return activ(linear(layer_3, 'fc1', n_hidden=512, init_scale=np.sqrt(2)))
 
+
 # class CustomCnnLnLstmPolicy(LstmPolicy):
 #     """
 #     Policy object that implements actor critic, using a layer normalized LSTMs with a CNN feature extraction
@@ -250,7 +253,13 @@ class TensorboardCallback(BaseCallback):
                 self.model.summary = tf.summary.merge_all()
             self.is_tb_set = True
 
-        for env in self.training_env.envs:
+        envs = []
+        if isinstance(self.training_env, VecEnv):
+            envs.extend(self.training_env.envs)
+        elif isinstance(self.training_env, gym.Env):
+            envs.append(self.training_env)
+
+        for env in envs:
             env = env.env
             if env.did_end:
                 summary = tf.Summary(value=[
@@ -284,13 +293,21 @@ class TensorboardCallback(BaseCallback):
 # 0.99900  692.800549
 # 0.99925  923.849624
 def create_cnn_lstm_ppo2_model(
-            save_location: str, game_params: Sequence[Any], iters: int=7500000,
-            verbose: int=1, gamma_start: float=0.99, gamma_stop=Optional[float],
-            taper_steps: int=100, lr_start: int=7.5e-4, lr_stop: int=5e-4,
-            start_steps=2000, end_steps=10000,
-            step_incr_freq=5, tb_log=r'D:\snake_tb_logs') -> Tuple[PPO2, gym.Env]:
-    import gc
+        save_location: str,
+        game_params: Sequence[Any],
+        iters: int=7500000,
+        verbose: int=1,
+        gamma_start: float=0.99,
+        gamma_stop: Optional[float]=None,
+        taper_steps: int=100,
+        lr_start: int=7.5e-4,
+        lr_stop: int=5e-4,
+        start_steps=2000,
+        end_steps=10000,
+        step_incr_freq=5,
+        tb_log=r'D:\snake_tb_logs') -> Tuple[PPO2, gym.Env]:
     from stable_baselines.common.policies import CnnLnLstmPolicy
+    import gc
 
     taper_steps = max(taper_steps, 1)
     env = make_vec_env(SnakeEnv, n_envs=64, env_kwargs={'game_params': game_params, 'cnn_policy': True})
@@ -333,8 +350,8 @@ def create_cnn_lstm_ppo2_model(
             print('Creating new model...')
             model = PPO2(
                 CnnLnLstmPolicy, env, verbose=verbose, gamma=gammas[i], n_steps=1000, learning_rate=lr_schedule.value,
-                cliprange=0.275, ent_coef=.025, noptepochs=4,
-                tensorboard_log=tb_log, nminibatches=32, policy_kwargs={'cnn_extractor': modified_cnn4, 'n_lstm': 512}
+                cliprange=0.275, ent_coef=.025, noptepochs=4, tensorboard_log=tb_log, nminibatches=32,
+                policy_kwargs={'cnn_extractor': modified_cnn4, 'n_lstm': 512}
             )
 
         if iters > 0:
