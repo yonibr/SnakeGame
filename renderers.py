@@ -252,37 +252,52 @@ class PGRenderer(Renderer):
         line_spacing = 6
         color = self.theme.text
 
-        upper_bound = self.height // 2 - line_spacing
-        lower_bound = self.height // 2 + (font_size + line_spacing) * (top_n + 1) + line_spacing
-        left_bound = self.width // 2 - font_size * 5
-        right_bound = self.width // 2 + font_size * 5
-        hline_y = self.height // 2 + font_size + line_spacing
-        scores_top = hline_y + line_spacing * 2
+        center_x = self.width // 2
+        center_y = self.height // 2
 
-        self.draw_text(
-            'Score', (self.width // 2 - font_size, self.height // 2), RectanglePoint.TOP_RIGHT,
-            font_size, color
+        names = '\n'.join(['Name', *names])
+        scores = '\n'.join(['Score', *scores])
+        lengths = '\n'.join(['Length', *lengths])
+
+        scores_rects = self.draw_text(
+            scores, (center_x, center_y), RectanglePoint.MID_TOP,
+            font_size, color, center_lines_vertically=False
+        )
+        scores_left = min(rect.left for rect in scores_rects)
+        scores_right = max(rect.right for rect in scores_rects)
+
+        names_rects = self.draw_text(
+            names, (scores_left - font_size, center_y), RectanglePoint.TOP_RIGHT,
+            font_size, color, center_lines_vertically=False
         )
         
-        self.draw_text(
-            'Length', (self.width // 2 + font_size, self.height // 2), RectanglePoint.TOP_LEFT,
-            font_size, color
+        lengths_rects = self.draw_text(
+            lengths, (scores_right + font_size, center_y), RectanglePoint.TOP_LEFT,
+            font_size, color, center_lines_vertically=False
         )
 
-        gfxdraw.vline(self.screen, self.width // 2, upper_bound, lower_bound, color)
+        line_width = 3
 
-        gfxdraw.hline(self.screen, left_bound, right_bound, hline_y, color)
+        upper_bound = names_rects[0].top - font_size // 2
+        lower_bound = names_rects[-1].bottom + font_size // 2
+        left_bound = min(rect.left for rect in names_rects) - font_size // 2
+        right_bound = max(rect.right for rect in lengths_rects) + font_size // 2
+        hline_y = names_rects[0].bottom + line_spacing + line_width // 2
 
-        self.draw_text(
-            '\n'.join(scores), (self.width // 2 - font_size * 2, scores_top),
-            RectanglePoint.MID_TOP, font_size, color, center_lines_vertically=False,
-            line_spacing=line_spacing
+        # Draw horizontal line
+        hline_rect = pg.Rect(left_bound, hline_y, right_bound - left_bound, line_width)
+        gfxdraw.box(self.screen, hline_rect, color)
+
+        # Draw vertical lines
+        left_vline_rect = pg.Rect(
+            scores_left - font_size // 2, upper_bound, line_width, lower_bound - upper_bound
         )
+        gfxdraw.box(self.screen, left_vline_rect, color)
 
-        self.draw_text(
-            '\n'.join(lengths), (self.width // 2 + font_size * 2, scores_top), RectanglePoint.MID_TOP,
-            font_size, color, center_lines_vertically=False, line_spacing=line_spacing
+        right_vline_rect = pg.Rect(
+            scores_right + font_size // 2, upper_bound, line_width, lower_bound - upper_bound
         )
+        gfxdraw.box(self.screen, right_vline_rect, color)
         
         return pg.Rect(
             left_bound, upper_bound, right_bound - left_bound, lower_bound - upper_bound
