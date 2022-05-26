@@ -1461,18 +1461,6 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.scene.resize(width / height)
 
     def render(self, run_time: float, frame_time: float) -> None:
-        self.elapsed_time += frame_time
-        self.frames += 1
-        if self.elapsed_time >= 1:
-            self.fps = self.frames / self.elapsed_time
-            self.frames = self.elapsed_time = 0
-
-        food_pos = self.game.food.pos
-        if self.food_pos != food_pos:
-            self.food_pos = food_pos
-            if self.eating_sound:
-                self.eating_sound.play()
-
         self.ctx.clear()
         self.scene.render(run_time, frame_time)
         self.ctx.enable(moderngl.BLEND)
@@ -1497,6 +1485,18 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             window.render(current_time, delta)
             if not window.is_closing:
                 window.swap_buffers()
+
+            self.elapsed_time += delta
+            self.frames += 1
+            if self.elapsed_time >= 1:
+                self.fps = self.frames / self.elapsed_time
+                self.frames = self.elapsed_time = 0
+
+            food_pos = self.game.food.pos
+            if self.food_pos != food_pos:
+                self.food_pos = food_pos
+                if self.eating_sound:
+                    self.eating_sound.play()
 
         _, duration = self.timer.stop()
         self.wnd.destroy()
