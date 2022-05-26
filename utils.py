@@ -91,6 +91,26 @@ class SetInterval(object):
         self.stopEvent.set()
 
 
+class FPSTracker(object):
+    def __init__(self, use_ms: bool=False, updates_per_second: int=1):
+        self.elapsed_time = 0
+        self.frames = 0
+        self.fps = 0
+        if use_ms:
+            self.calculation_threshold = 1000 / updates_per_second
+        else:
+            self.calculation_threshold = 1 / updates_per_second
+
+    def tick(self, delta: float) -> float:
+        self.elapsed_time += delta
+        self.frames += 1
+        if self.elapsed_time >= self.calculation_threshold:
+            self.fps = self.frames / (self.elapsed_time / self.calculation_threshold)
+            self.frames = self.elapsed_time = 0
+
+        return self.fps
+
+
 key_maps = {
     'pynput': {
         Key.up: 'up',

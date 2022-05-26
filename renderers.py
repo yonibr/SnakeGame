@@ -44,6 +44,7 @@ from snake import Direction, Game, Node, Snake
 from snake_args import add_args
 from themes import Theme, themes
 from utils import (
+    FPSTracker,
     game_over_text,
     get_high_scores,
     HorizontalTextAlignment,
@@ -160,9 +161,8 @@ class PGRenderer(Renderer):
         pg.display.flip()
 
     def run(self, game: Game) -> None:
-        elapsed_time = frames = 0
-
         state.run = True
+        fps_tracker = FPSTracker(use_ms=True)
         
         while state.run:
             for event in pg.event.get():
@@ -174,11 +174,7 @@ class PGRenderer(Renderer):
 
             self.render(game)
 
-            elapsed_time += self.clock.tick(60)
-            frames += 1
-            if elapsed_time >= 1000:
-                self.fps = frames * 1000 / elapsed_time
-                frames = elapsed_time = 0
+            self.fps = fps_tracker.tick(self.clock.tick(60))
 
     def game_to_array(self, game: Game) -> np.ndarray:
         arr = np.tile(self.theme.background, (game.board_width, game.board_height, 1))
@@ -1031,12 +1027,11 @@ if platform.system() != 'Windows':
             self.previous_wall_nodes = set()
             self.previous_snake_nodes = set()
             self.elapsed_time = None
-            self.frames = None
             self.prev_time = None
-            self.previous_calc_time = None
             self.use_colors = None
             self.window = None
             self.stdscr = None
+            self.fps_tracker = FPSTracker()
 
         def initialize(self, game: Game, **kwargs: Any) -> None:
             self.stdscr = curses.initscr()
@@ -1052,8 +1047,8 @@ if platform.system() != 'Windows':
             if self.use_colors:
                 self.window.bkgd(' ', curses.color_pair(4))
 
-            self.previous_calc_time = self.prev_time = time.perf_counter()
-            self.elapsed_time = self.frames = 0
+            self.prev_time = time.perf_counter()
+            self.elapsed_time = 0
             self.previous_snake_nodes = set()
             self.previous_wall_nodes = set()
             self.previous_food = None
@@ -1286,16 +1281,11 @@ if platform.system() != 'Windows':
 
         def track_fps(self) -> float:
             curr_time = time.perf_counter()
-            elapsed_time = curr_time - self.prev_time
+            delta = curr_time - self.prev_time
             self.prev_time = curr_time
-            self.elapsed_time += elapsed_time
-            self.frames += 1
-            if self.elapsed_time >= 1:
-                self.fps = self.frames / self.elapsed_time
-                self.elapsed_time = 0
-                self.frames = 0
+            self.fps = self.fps_tracker.tick(delta)
 
-            return elapsed_time
+            return delta
 
         def debug(self, s: str) -> None:
             self.debug_text.append(s)
@@ -1346,7 +1336,6 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.background_color = None
         self.theme = None
         self.game = None
-        self.frames = None
         self.score_renderer = None
         self.level_renderer = None
         self.fps_renderer = None
@@ -1355,9 +1344,9 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
         self.high_scores_names_renderer = None
         self.high_scores_scores_renderer = None
         self.high_scores_lengths_renderer = None
-        self.elapsed_time = self.frames = 0
         self.draw_game_over = False
         self.eating_sound = None
+        self.fps_tracker = FPSTracker()
 
         self.recreate_text_renderer = defaultdict(lambda: True)
 
@@ -1486,11 +1475,7 @@ class OpenGLRenderer(mglw.WindowConfig, Renderer):
             if not window.is_closing:
                 window.swap_buffers()
 
-            self.elapsed_time += delta
-            self.frames += 1
-            if self.elapsed_time >= 1:
-                self.fps = self.frames / self.elapsed_time
-                self.frames = self.elapsed_time = 0
+            self.fps = self.fps_tracker.tick(delta)
 
             food_pos = self.game.food.pos
             if self.food_pos != food_pos:
