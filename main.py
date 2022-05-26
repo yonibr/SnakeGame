@@ -8,7 +8,6 @@
 #   - Ability to configure without needing command line arguments
 #   = Two-player version that's a combination of snake and tron (players eat the food to make
 #     their tails longer and try to get the other player to crash into the wall or their tail)
-#   - Allow specifying name for high scores
 #   - Starting countdown
 
 import time

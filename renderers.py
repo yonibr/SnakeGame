@@ -3,7 +3,6 @@
 #   - Make it so scale factor decreases if window size would be too big for the screen
 #   - Make font size depend on scale factor
 #   - Fix PGRenderer2 not working at very low FPS
-#   - Display names in high scores
 
 import itertools
 import moderngl
@@ -1166,16 +1165,32 @@ if platform.system() != 'Windows':
 
         def draw_high_scores(self, game: Game, top_n: int=5) -> None:
             names, scores, lengths = get_high_scores(top_n=top_n)
+            names = ['Name', *names]
+            scores = ['Score', *scores]
+            lengths = ['Length', *lengths]
+
+            names_width = max(len(name) for name in names)
+            scores_width = max(len(score) for score in scores)
+            lengths_width = max(len(length) for length in lengths)
 
             start_y = self.height // 2
 
-            self.draw_str(
-                ' Score | Length ', self.width // 2 - 7, start_y, self.text_color, game,
-                options=curses.A_UNDERLINE
-            )
-            for score, length, i in zip(scores, lengths, range(1, len(scores) + 1)):
-                x = self.width // 2 - len(score) - 1
-                self.draw_str(f'{score} | {length}', x, start_y + i, self.text_color, game)
+            for name, score, length, i in zip(names, scores, lengths, range(len(scores) + 1)):
+                if i == 0:
+                    name = ' ' * (names_width - len(name)) + name
+                    length += ' ' * (lengths_width - len(length))
+
+                score = ''.join([
+                    ' ' * ((scores_width - len(score)) // 2),
+                    score,
+                    ' ' * ((scores_width - len(score) + 1) // 2)
+                ])
+
+                x = self.width // 2 - scores_width // 2 - 3 - len(name)
+                self.draw_str(
+                    f'{name} | {score} | {length}', x, start_y + i, self.text_color, game,
+                    options=0 if i > 0 else curses.A_UNDERLINE
+                )
 
         def draw_str(
                 self, s: str,
