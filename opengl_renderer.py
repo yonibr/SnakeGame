@@ -125,7 +125,7 @@ class Transform3D(object):
     def transformation_matrix(self) -> Matrix44:
         if self._transformation_matrix is None:
             self._transformation_matrix = self.translation_matrix * self.rotation_matrix * self.scale_matrix
-        return self.translation_matrix * self.rotation_matrix * self.scale_matrix
+        return self._transformation_matrix
 
     def copy(self) -> 'Transform3D':
         return Transform3D(
